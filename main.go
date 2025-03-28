@@ -3,22 +3,40 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
-	"log"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 )
 
 func main() {
-	// Set up logging
-	logger := log.New(os.Stdout, "", log.LstdFlags)
+	// Initialize metadata collector
+	collector := NewMetadataCollector()
 
-	// Initialize BPF (platform-specific)
+	// Initialize database
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		fmt.Printf("Failed to get home directory: %v\n", err)
+		os.Exit(1)
+	}
+	dataDir := filepath.Join(homeDir, ".bpf-recorder")
+
+	db, err := NewDB(dataDir)
+	if err != nil {
+		fmt.Printf("Failed to initialize database: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	// Initialize BPF
 	reader, cleanup, err := InitBPF()
 	if err != nil {
-		logger.Fatalf("Failed to initialize BPF: %v", err)
+		fmt.Printf("Failed to initialize BPF: %v\n", err)
+		os.Exit(1)
 	}
 	if cleanup != nil {
 		defer cleanup()
@@ -28,81 +46,82 @@ func main() {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 
-	logger.Println("Process monitoring started... Press Ctrl+C to stop")
+	fmt.Println("Process monitoring started... Press Ctrl+C to stop")
 
 	// Process events
 	go func() {
 		var event Event
-		eventCount := 0
-		lastEventTime := time.Now()
 
 		for {
-			// Add heartbeat to show loop is running
-			if time.Since(lastEventTime) > 10*time.Second {
-				logger.Printf("Still monitoring... (processed %d events)", eventCount)
-				lastEventTime = time.Now()
-			}
-
 			record, err := reader.Read()
 			if err != nil {
 				if strings.Contains(err.Error(), "closed") {
 					return
 				}
-				logger.Printf("Error reading perf buffer: %v", err)
+				fmt.Printf("Error reading perf buffer: %v\n", err)
 				continue
 			}
 
 			if record.LostSamples != 0 {
-				logger.Printf("Lost %d samples", record.LostSamples)
+				fmt.Printf("Lost %d samples\n", record.LostSamples)
 				continue
 			}
 
 			// Parse event data
 			if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
-				logger.Printf("Error parsing event: %v", err)
+				fmt.Printf("Error parsing event: %v\n", err)
 				continue
 			}
-
-			// Convert C string to Go string
-			comm := string(bytes.TrimRight(event.Comm[:], "\x00"))
 
 			// Handle different event types
 			switch event.EventType {
 			case EventExec:
-				filename := string(bytes.TrimRight(event.Filename[:], "\x00"))
-				ppid := GetParentPID(event.PID)
-				args := GetCommandLineArgs(event.PID)
+				// Start metadata collection in background
+				collector.CollectProcessInfo(event.PID)
 
-				if len(args) == 0 {
-					args = []string{filename}
+				// Give the collector a moment to gather data
+				time.Sleep(10 * time.Millisecond)
+
+				// Get collected metadata
+				info := collector.GetProcessInfo(event.PID)
+				if info == nil {
+					// If metadata collection failed, create minimal record
+					info = &ProcessInfo{
+						PID:  event.PID,
+						Comm: string(bytes.TrimRight(event.Comm[:], "\x00")),
+					}
 				}
 
-				cmdLine := strings.Join(args, " ")
-				processTreeStr := GetProcessTree(event.PID, comm)
-				StoreProcess(event.PID, processTreeStr)
+				// Convert environment to JSON for storage
+				envJSON, _ := json.Marshal(info.Environment)
 
-				logger.Printf("EXEC PID: %d, PPID: %d, Command: %s, Args: %s, Tree: %s",
-					event.PID, ppid, comm, cmdLine, processTreeStr)
+				// Create database record
+				dbRecord := &ProcessRecord{
+					Timestamp:   time.Now(),
+					PID:         info.PID,
+					PPID:        info.PPID,
+					Comm:        info.Comm,
+					CmdLine:     strings.Join(info.CmdLine, " "),
+					ExePath:     info.ExePath,
+					WorkingDir:  info.WorkingDir,
+					Username:    info.Username,
+					ParentComm:  info.ParentComm,
+					Environment: string(envJSON),
+				}
+
+				// Insert into database
+				if err := db.InsertProcess(dbRecord); err != nil {
+					fmt.Printf("Failed to insert process record: %v\n", err)
+				}
 
 			case EventExit:
-				ppid := GetParentPID(event.PID)
-				processTreeStr := GetProcessTree(event.PID, comm)
-
-				logger.Printf("EXIT PID: %d, PPID: %d, Command: %s, Exit Code: %d, Tree: %s",
-					event.PID, ppid, comm, event.ExitCode, processTreeStr)
-
-				RemoveProcess(event.PID)
-
-			default:
-				logger.Printf("Unknown event type: %d", event.EventType)
+				// Clean up metadata for exited process
+				collector.RemoveProcess(event.PID)
 			}
-
-			eventCount++
-			lastEventTime = time.Now()
 		}
 	}()
 
 	// Wait for signal
 	<-sig
-	logger.Println("Shutting down...")
+	fmt.Println("Shutting down...")
 }
