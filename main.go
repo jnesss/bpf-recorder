@@ -53,19 +53,15 @@ func main() {
 			case EventExec:
 				processCount++
 				go func(evt Event, count int) {
-					comm := string(bytes.TrimRight(evt.Comm[:], "\x00"))
-					fmt.Printf("\nProcess %d: %s (PID: %d)\n", count, comm, evt.PID)
-
 					// Start metadata collection
 					collector.CollectProcessInfo(evt.PID)
 					time.Sleep(10 * time.Millisecond)
 
 					info := collector.GetProcessInfo(evt.PID)
 					if info == nil {
-						fmt.Printf("Warning: No metadata collected for PID %d\n", evt.PID)
 						info = &ProcessInfo{
 							PID:  evt.PID,
-							Comm: comm,
+							Comm: string(bytes.TrimRight(evt.Comm[:], "\x00")),
 						}
 					}
 
@@ -86,11 +82,16 @@ func main() {
 
 					if err := db.InsertProcess(dbRecord); err != nil {
 						fmt.Printf("\nError inserting process record: %v\n", err)
+					} else {
+						fmt.Print(".")
+						if count%100 == 0 {
+							fmt.Printf(" [%d]\n", count)
+						}
 					}
 				}(event, processCount)
 
 			case EventExit:
-				fmt.Printf("- ") // Visual indicator of process exit
+				// Just remove from collector, no logging needed
 				collector.RemoveProcess(event.PID)
 			}
 		}
