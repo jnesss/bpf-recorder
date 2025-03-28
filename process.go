@@ -109,6 +109,11 @@ func GetProcessInfo(pid uint32) (*ProcessInfo, error) {
 	return info, nil
 }
 
+type MetadataRequest struct {
+	done chan *ProcessInfo // Channel for this specific process
+	pid  uint32
+}
+
 // MetadataCollector handles asynchronous collection of process metadata
 type MetadataCollector struct {
 	processes map[uint32]*ProcessInfo
@@ -123,17 +128,26 @@ func NewMetadataCollector() *MetadataCollector {
 }
 
 // CollectProcessInfo asynchronously collects process information
-func (mc *MetadataCollector) CollectProcessInfo(pid uint32) {
+func (mc *MetadataCollector) CollectProcessInfo(pid uint32) <-chan *ProcessInfo {
+	done := make(chan *ProcessInfo, 1) // Buffer of 1 for this specific process
+
 	go func() {
 		info, err := GetProcessInfo(pid)
 		if err != nil {
-			return
+			info = &ProcessInfo{
+				PID:  pid,
+				Comm: fmt.Sprintf("unknown-%d", pid),
+			}
 		}
-
 		mc.mu.Lock()
 		mc.processes[pid] = info
 		mc.mu.Unlock()
+
+		done <- info
+		close(done) // Signal we're done with this collection
 	}()
+
+	return done
 }
 
 // GetProcessInfo retrieves collected process information
