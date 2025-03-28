@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -139,28 +138,11 @@ func main() {
 func initDatabaseWithUser() (*DB, error) {
 	dataDir := "data"
 
-	// Get original user if running under sudo
-	u, err := getOriginalUser()
-	if err != nil {
-		fmt.Printf("Warning: Could not get original user: %v\n", err)
-	} else {
-		// Create data directory with proper ownership
-		uid, _ := strconv.Atoi(u.Uid)
-		gid, _ := strconv.Atoi(u.Gid)
-
-		if err := os.MkdirAll(dataDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create data directory: %v", err)
-		}
-		if err := os.Chown(dataDir, uid, gid); err != nil {
-			return nil, fmt.Errorf("failed to change data directory ownership: %v", err)
-		}
+	// Drop privileges before doing anything with the database
+	if err := dropPrivileges(); err != nil {
+		return nil, fmt.Errorf("failed to drop privileges: %v", err)
 	}
 
-	// Open database
-	db, err := NewDB(dataDir)
-	if err != nil {
-		return nil, err
-	}
-
-	return db, nil
+	// Create database as unprivileged user - they can create their own directory
+	return NewDB(dataDir)
 }
