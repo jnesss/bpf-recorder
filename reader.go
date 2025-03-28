@@ -6,6 +6,23 @@
 // 3. Easier testing through the ability to mock event sources
 package main
 
+// Event types
+const (
+	EventExec = 1
+	EventExit = 2
+)
+
+// Event represents a process event from the BPF layer
+type Event struct {
+	PID       uint32
+	Pad0      uint32 // padding for 64-bit alignment
+	Timestamp uint64
+	Comm      [16]byte
+	Filename  [64]byte
+	EventType int32
+	ExitCode  int32
+}
+
 // PerfReader defines a platform-agnostic interface for reading monitoring events.
 // On Linux, this is implemented using eBPF's perf buffer.
 // This abstraction allows the core logic to remain platform-independent
