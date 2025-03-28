@@ -16,14 +16,6 @@ func main() {
 	// Initialize metadata collector
 	collector := NewMetadataCollector()
 
-	// Initialize database with proper permissions
-	db, err := initDatabaseWithUser()
-	if err != nil {
-		fmt.Printf("Failed to initialize database: %v\n", err)
-		os.Exit(1)
-	}
-	defer db.Close()
-
 	// Initialize BPF
 	reader, cleanup, err := InitBPF()
 	if err != nil {
@@ -33,6 +25,14 @@ func main() {
 	if cleanup != nil {
 		defer cleanup()
 	}
+
+	// Initialize database with proper permissions
+	db, err := initDatabaseWithUser()
+	if err != nil {
+		fmt.Printf("Failed to initialize database: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
 
 	// Set up signal handler
 	sig := make(chan os.Signal, 1)
