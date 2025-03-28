@@ -100,45 +100,6 @@ func initSchema(db *sql.DB) error {
 	return nil
 }
 
-func initSchema(db *sql.DB) error {
-	// Create table
-	schema := `
-	CREATE TABLE IF NOT EXISTS processes (
-		id           INTEGER PRIMARY KEY AUTOINCREMENT,
-		timestamp    DATETIME NOT NULL,
-		pid          INTEGER NOT NULL,
-		ppid         INTEGER NOT NULL,
-		comm         TEXT NOT NULL,
-		cmdline      TEXT,
-		exe_path     TEXT,
-		working_dir  TEXT,
-		username     TEXT,
-		parent_comm  TEXT,
-		environment  TEXT,
-		container_id TEXT
-	);`
-
-	if _, err := db.Exec(schema); err != nil {
-		return fmt.Errorf("failed to create table: %v", err)
-	}
-
-	// Create indexes
-	indexes := []string{
-		"CREATE INDEX IF NOT EXISTS idx_pid ON processes(pid);",
-		"CREATE INDEX IF NOT EXISTS idx_ppid ON processes(ppid);",
-		"CREATE INDEX IF NOT EXISTS idx_timestamp ON processes(timestamp);",
-		"CREATE INDEX IF NOT EXISTS idx_container ON processes(container_id);",
-	}
-
-	for _, idx := range indexes {
-		if _, err := db.Exec(idx); err != nil {
-			return fmt.Errorf("failed to create index: %v", err)
-		}
-	}
-
-	return nil
-}
-
 // InsertProcess adds a process creation record to the database
 func (db *DB) InsertProcess(record *ProcessRecord) error {
 	query := `
