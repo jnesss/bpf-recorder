@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -16,11 +17,8 @@ func main() {
 	// Initialize metadata collector
 	collector := NewMetadataCollector()
 
-	// Initialize database in current directory
-	dataDir := "data" // Simple subdirectory in current working directory
-	fmt.Printf("Initializing database in: %s\n", dataDir)
-
-	db, err := NewDB(dataDir)
+	// Initialize database with proper permissions
+	db, err := initDatabaseWithUser()
 	if err != nil {
 		fmt.Printf("Failed to initialize database: %v\n", err)
 		os.Exit(1)
@@ -53,11 +51,10 @@ func main() {
 			case EventExec:
 				processCount++
 				go func(evt Event, count int) {
-					// Start metadata collection
-					collector.CollectProcessInfo(evt.PID)
-					time.Sleep(10 * time.Millisecond)
+					// Each collection gets its own completion channel
+					done := collector.CollectProcessInfo(evt.PID)
+					info := <-done // We're guaranteed to get the right process's info
 
-					info := collector.GetProcessInfo(evt.PID)
 					if info == nil {
 						info = &ProcessInfo{
 							PID:  evt.PID,
@@ -78,6 +75,11 @@ func main() {
 						ParentComm:  info.ParentComm,
 						Environment: string(envJSON),
 						ContainerID: info.ContainerID,
+					}
+
+					// Drop privileges for database operations
+					if err := dropPrivileges(); err != nil {
+						fmt.Printf("\nWarning: Failed to drop privileges: %v\n", err)
 					}
 
 					if err := db.InsertProcess(dbRecord); err != nil {
@@ -132,4 +134,33 @@ func main() {
 	// Wait for signal
 	<-sig
 	fmt.Println("Shutting down...")
+}
+
+func initDatabaseWithUser() (*DB, error) {
+	dataDir := "data"
+
+	// Get original user if running under sudo
+	u, err := getOriginalUser()
+	if err != nil {
+		fmt.Printf("Warning: Could not get original user: %v\n", err)
+	} else {
+		// Create data directory with proper ownership
+		uid, _ := strconv.Atoi(u.Uid)
+		gid, _ := strconv.Atoi(u.Gid)
+
+		if err := os.MkdirAll(dataDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create data directory: %v", err)
+		}
+		if err := os.Chown(dataDir, uid, gid); err != nil {
+			return nil, fmt.Errorf("failed to change data directory ownership: %v", err)
+		}
+	}
+
+	// Open database
+	db, err := NewDB(dataDir)
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
 }
