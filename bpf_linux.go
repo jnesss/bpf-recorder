@@ -10,6 +10,7 @@ package main
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -cc clang execve bpf/execve.c -- -I./bpf
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/cilium/ebpf/link"
@@ -46,43 +47,51 @@ var objs execveObjects
 func InitBPF() (PerfReader, func(), error) {
 	// Remove rlimit
 	if err := rlimit.RemoveMemlock(); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to remove rlimit: %v", err)
 	}
 
 	// Load pre-compiled BPF program
 	if err := loadExecveObjects(&objs, nil); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to load BPF objects: %v", err)
 	}
 
 	// Create perf reader
 	reader, err := perf.NewReader(objs.Events, os.Getpagesize()*8)
 	if err != nil {
 		objs.Close()
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create perf reader: %v", err)
 	}
+
+	var cleanupFuncs []func()
+	cleanupFuncs = append(cleanupFuncs, func() {
+		reader.Close()
+		objs.Close()
+	})
 
 	// Attach execve tracepoint
 	execveTP, err := link.Tracepoint("syscalls", "sys_enter_execve", objs.TracepointSyscallsSysEnterExecve, nil)
 	if err != nil {
-		reader.Close()
-		objs.Close()
-		return nil, nil, err
+		for _, cleanup := range cleanupFuncs {
+			cleanup()
+		}
+		return nil, nil, fmt.Errorf("failed to attach execve tracepoint: %v", err)
 	}
+	cleanupFuncs = append(cleanupFuncs, func() { execveTP.Close() })
 
-	// Attach exit tracepoint
+	// Try to attach exit tracepoint, but continue if it fails
 	exitTP, err := link.Tracepoint("sched", "sched_process_exit", objs.TracepointSchedSchedProcessExit, nil)
 	if err != nil {
-		execveTP.Close()
-		reader.Close()
-		objs.Close()
-		return nil, nil, err
+		fmt.Printf("Warning: Could not attach exit tracepoint: %v\n", err)
+		fmt.Println("Continuing with process creation monitoring only...")
+	} else {
+		cleanupFuncs = append(cleanupFuncs, func() { exitTP.Close() })
 	}
 
 	cleanup := func() {
-		execveTP.Close()
-		exitTP.Close()
-		reader.Close()
-		objs.Close()
+		// Execute cleanup functions in reverse order
+		for i := len(cleanupFuncs) - 1; i >= 0; i-- {
+			cleanupFuncs[i]()
+		}
 	}
 
 	return &perfReaderWrapper{reader}, cleanup, nil
