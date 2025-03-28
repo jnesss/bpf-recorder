@@ -17,13 +17,9 @@ func main() {
 	// Initialize metadata collector
 	collector := NewMetadataCollector()
 
-	// Initialize database
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		fmt.Printf("Failed to get home directory: %v\n", err)
-		os.Exit(1)
-	}
-	dataDir := filepath.Join(homeDir, ".bpf-recorder")
+	// Initialize database in current directory
+	dataDir := "data" // Simple subdirectory in current working directory
+	fmt.Printf("Initializing database in: %s\n", dataDir)
 
 	db, err := NewDB(dataDir)
 	if err != nil {
@@ -51,30 +47,30 @@ func main() {
 
 	// Start event processor
 	go func() {
+		fmt.Println("Starting event processor...")
+		processCount := 0
 		for event := range eventChan {
 			switch event.EventType {
 			case EventExec:
-				go func(evt Event) {
-					// Start metadata collection in background
-					collector.CollectProcessInfo(evt.PID)
+				processCount++
+				go func(evt Event, count int) {
+					comm := string(bytes.TrimRight(evt.Comm[:], "\x00"))
+					fmt.Printf("\nProcess %d: %s (PID: %d)\n", count, comm, evt.PID)
 
-					// Give the collector a moment to gather data
+					// Start metadata collection
+					collector.CollectProcessInfo(evt.PID)
 					time.Sleep(10 * time.Millisecond)
 
-					// Get collected metadata
 					info := collector.GetProcessInfo(evt.PID)
 					if info == nil {
-						// If metadata collection failed, create minimal record
+						fmt.Printf("Warning: No metadata collected for PID %d\n", evt.PID)
 						info = &ProcessInfo{
 							PID:  evt.PID,
-							Comm: string(bytes.TrimRight(evt.Comm[:], "\x00")),
+							Comm: comm,
 						}
 					}
 
-					// Convert environment to JSON for storage
 					envJSON, _ := json.Marshal(info.Environment)
-
-					// Create database record
 					dbRecord := &ProcessRecord{
 						Timestamp:   time.Now(),
 						PID:         info.PID,
@@ -89,13 +85,13 @@ func main() {
 						ContainerID: info.ContainerID,
 					}
 
-					// Insert into database
 					if err := db.InsertProcess(dbRecord); err != nil {
-						fmt.Printf("Failed to insert process record: %v\n", err)
+						fmt.Printf("\nError inserting process record: %v\n", err)
 					}
-				}(event)
+				}(event, processCount)
 
 			case EventExit:
+				fmt.Printf("- ") // Visual indicator of process exit
 				collector.RemoveProcess(event.PID)
 			}
 		}
