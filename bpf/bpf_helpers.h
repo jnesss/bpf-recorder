@@ -7,6 +7,7 @@ static void* (*bpf_map_lookup_elem)(void* map, const void* key) = (void*) 1;
 static int (*bpf_map_update_elem)(void* map, const void* key, const void* value, u64 flags) = (void*) 2;
 static int (*bpf_map_delete_elem)(void* map, const void* key) = (void*) 3;
 static int (*bpf_probe_read)(void* dst, u32 size, const void* unsafe_ptr) = (void*) 4;
+static int (*bpf_probe_read_str)(void *dst, u32 size, const void *unsafe_ptr) = (void*) 45;
 static u64 (*bpf_ktime_get_ns)(void) = (void*) 5;
 static int (*bpf_trace_printk)(const char* fmt, u32 fmt_size, ...) = (void*) 6;
 static u64 (*bpf_get_current_pid_tgid)(void) = (void*) 14;
