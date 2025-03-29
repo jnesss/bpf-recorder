@@ -101,7 +101,7 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
         // Copy to appropriate buffer
         for (int j = 0; j < sizeof(arg_buf) && arg_buf[j]; j++) {
             if (!truncated && offset < sizeof(event.cmdline) - 1) {
-                // Still using event structure buffer
+                // Still using event structure buffer (now 192 bytes)
                 event.cmdline[offset++] = arg_buf[j];
             } else {
                 // Need to use overflow buffer
@@ -113,13 +113,13 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
                     if (!overflow_buf) {
                         break; // Can't use overflow buffer
                     }
-                    
+            
                     // Copy what we have so far to overflow buffer
                     for (int k = 0; k < offset; k++) {
                         overflow_buf[k] = event.cmdline[k];
                     }
                 }
-                
+        
                 if (offset < 511) {
                     overflow_buf[offset++] = arg_buf[j];
                 } else {
