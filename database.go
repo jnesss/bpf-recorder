@@ -28,6 +28,8 @@ type ProcessRecord struct {
 	ParentComm  string
 	Environment string // Stored as JSON
 	ContainerID string // Added container support
+	UID         string // User ID
+	GID         string // Group ID
 }
 
 func NewDB(dataDir string) (*DB, error) {
@@ -76,7 +78,9 @@ func initSchema(db *sql.DB) error {
 		username     TEXT,
 		parent_comm  TEXT,
 		environment  TEXT,
-		container_id TEXT
+        container_id TEXT,
+        uid          TEXT,
+        gid          TEXT
 	);`
 
 	if _, err := db.Exec(schema); err != nil {
