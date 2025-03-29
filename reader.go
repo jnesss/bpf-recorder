@@ -32,7 +32,7 @@ type Event struct {
 	CWD        [64]byte
 
 	// Command line in the structure
-	Cmdline     [128]byte
+	Cmdline     [64]byte
 	CmdlineLen  uint32
 	IsTruncated uint8
 	Pad         [3]byte
