@@ -38,7 +38,7 @@ struct event {
     char cwd[64];            // Current working directory
     
     // Command line in the structure
-    char cmdline[160];       // Command line (inline for most cases)
+    char cmdline[144];       // Command line (inline for most cases)
     u32 cmdline_len;         // Length of command line
     u8 is_truncated;         // Flag to indicate truncation
     u8 _pad[3];              // Padding to ensure alignment
