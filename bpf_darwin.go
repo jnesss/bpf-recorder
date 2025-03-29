@@ -10,9 +10,8 @@ package main
 import "fmt"
 
 // InitBPF provides a stub implementation for MacOS.
-// This allows the project to be built and tested on MacOS development machines,
-// while the actual eBPF monitoring functionality remains Linux-only.
+// Returns nil reader but no error so the program can continue with web UI
 func InitBPF() (PerfReader, func(), error) {
-	return nil, nil, fmt.Errorf("eBPF monitoring is only supported on Linux systems. " +
-		"This stub exists to enable development and testing on MacOS")
+	fmt.Println("BPF monitoring not available on MacOS. Starting in web-only mode...")
+	return nil, nil, nil
 }
