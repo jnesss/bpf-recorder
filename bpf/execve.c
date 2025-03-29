@@ -57,10 +57,10 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Get parent PID the safe way
     u32 ppid = 0;
     void *parent = NULL;
-    bpf_probe_read(&parent, sizeof(parent), task + 0x248); // Offset to real_parent
+    bpf_probe_read(&parent, sizeof(parent), task + 2496); // Exact offset to real_parent on Amazon Linux
     if (parent) {
-        bpf_probe_read(&ppid, sizeof(ppid), parent + 0x228); // Offset to tgid
-        bpf_probe_read_str(&event.parent_comm, sizeof(event.parent_comm), parent + 0x550); // Offset to comm
+      bpf_probe_read(&ppid, sizeof(ppid), parent + 2484); // Exact offset to tgid on Amazon Linux
+      bpf_probe_read_str(&event.parent_comm, sizeof(event.parent_comm), parent + 3040); // Exact offset to comm on Amazon Linux
     }
     event.ppid = ppid;
     
