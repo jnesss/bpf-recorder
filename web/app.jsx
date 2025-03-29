@@ -1,8 +1,8 @@
-console.log('APP.JSX LOADED - VERSION 7 (FINAL RESIZE)');
+console.log('APP.JSX LOADED - VERSION 10 (FINAL TREE)');
 
 const { useState, useEffect } = React;
 
-// Simple SVG icons for sidebar toggle
+// Simple SVG icons
 const ChevronLeftIcon = () => (
   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" 
        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -17,6 +17,7 @@ const ChevronRightIcon = () => (
   </svg>
 );
 
+// Process List component
 const ProcessList = ({ processes, onSelectProcess }) => {
   return (
     <div className="bg-white shadow-sm rounded-lg overflow-hidden">
@@ -60,6 +61,88 @@ const ProcessList = ({ processes, onSelectProcess }) => {
   );
 };
 
+// Labeled Process Tree component
+const ProcessTreeView = ({ processes, selectedProcess, onSelectProcess }) => {
+  if (!selectedProcess) return null;
+  
+  const [parentProcesses, setParentProcesses] = useState([]);
+  
+  // Function to find a process by PID
+  const findProcessByPid = (pid) => {
+    return processes.find(p => p.pid === pid);
+  };
+  
+  // Build the process tree when selected process changes
+  useEffect(() => {
+    if (!selectedProcess) return;
+    
+    const tree = [];
+    let currentProcess = selectedProcess;
+    
+    // Add the selected process
+    tree.push(currentProcess);
+    
+    // Add parent processes up to root (PID 1 or until we can't find more parents)
+    while (currentProcess.ppid > 0) {
+      const parentProcess = findProcessByPid(currentProcess.ppid);
+      if (!parentProcess) break;
+      
+      tree.push(parentProcess);
+      currentProcess = parentProcess;
+      
+      // Prevent infinite loops (just in case)
+      if (tree.length > 20) break;
+    }
+    
+    // Reverse the array so parents come first
+    setParentProcesses(tree.reverse());
+  }, [selectedProcess, processes]);
+  
+  // Helper to get file name from path
+  const getFileName = (path, comm) => {
+    if (path) {
+      const parts = path.split('/');
+      return parts[parts.length - 1];
+    }
+    return comm || '-';
+  };
+  
+  if (parentProcesses.length === 0) return null;
+  
+  return (
+    <div className="p-6 space-y-4 border-b border-gray-200">
+      <h3 className="text-lg font-semibold border-b pb-2">Process Tree</h3>
+      
+      <div className="space-y-1">
+        {parentProcesses.map((process, index) => {
+          const isSelected = process.pid === selectedProcess.pid;
+          const isLast = index === parentProcesses.length - 1;
+          
+          return (
+            <div 
+              key={process.pid} 
+              className={`font-mono text-sm cursor-pointer hover:bg-gray-100 rounded py-1 ${
+                isSelected ? 'font-bold bg-blue-50' : ''
+              }`}
+              style={{ paddingLeft: `${index * 16}px` }}
+              onClick={() => onSelectProcess(process)}
+            >
+              {index > 0 && (
+                <span className="text-gray-400 mr-1">└─</span>
+              )}
+              <span className="text-blue-600 mr-1">{process.pid}</span>
+              <span title={process.exePath || process.comm}>
+                {getFileName(process.exePath, process.comm)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// Process Details component
 const ProcessDetails = ({ process, isCollapsed }) => {
   if (!process) return null;
 
@@ -405,22 +488,32 @@ const App = () => {
           </button>
         </div>
 
-        {/* Sidebar content with better padding */}
-        <div className="flex-1 overflow-y-auto">
-          {selectedProcess ? (
-            <div>
-              <ProcessDetails process={selectedProcess} isCollapsed={isCollapsed} />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full p-8 text-center text-gray-500">
-              {!isCollapsed && (
-                <div>
-                  <p className="text-lg mb-2">No Process Selected</p>
-                  <p className="text-sm">Click on a process to view its details</p>
-                </div>
-              )}
-            </div>
+        {/* Sidebar content with labeled process tree at top */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Process Tree - only show when expanded and process is selected */}
+          {!isCollapsed && selectedProcess && (
+            <ProcessTreeView 
+              processes={processes} 
+              selectedProcess={selectedProcess} 
+              onSelectProcess={handleProcessSelect}
+            />
           )}
+          
+          {/* Process Details */}
+          <div className="flex-1 overflow-y-auto">
+            {selectedProcess ? (
+              <ProcessDetails process={selectedProcess} isCollapsed={isCollapsed} />
+            ) : (
+              <div className="flex items-center justify-center h-full p-8 text-center text-gray-500">
+                {!isCollapsed && (
+                  <div>
+                    <p className="text-lg mb-2">No Process Selected</p>
+                    <p className="text-sm">Click on a process to view its details</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
