@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"os/user"
 	"strings"
 	"syscall"
 	"time"
@@ -75,19 +76,51 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 		}
 	}
 
+	// Merge event data with collected process info
+	// Use BPF-collected data when available, fall back to proc-collected data
+	ppid := info.PPID
+	if evt.PPID > 0 {
+		ppid = evt.PPID
+	}
+
+	parentComm := info.ParentComm
+	if len(bytes.TrimRight(evt.ParentComm[:], "\x00")) > 0 {
+		parentComm = string(bytes.TrimRight(evt.ParentComm[:], "\x00"))
+	}
+
+	username := info.Username
+	if evt.UID > 0 && username == "" {
+		if u, err := user.LookupId(fmt.Sprintf("%d", evt.UID)); err == nil {
+			username = u.Username
+		}
+	}
+
+	workingDir := info.WorkingDir
+	if len(bytes.TrimRight(evt.CWD[:], "\x00")) > 0 {
+		workingDir = string(bytes.TrimRight(evt.CWD[:], "\x00"))
+	}
+
+	cmdLine := strings.Join(info.CmdLine, " ")
+	if len(bytes.TrimRight(evt.Args[:], "\x00")) > 0 {
+		// If we have args from BPF, use them
+		cmdLine = string(bytes.TrimRight(evt.Args[:], "\x00"))
+	}
+
 	envJSON, _ := json.Marshal(info.Environment)
 	dbRecord := &ProcessRecord{
 		Timestamp:   time.Now(),
 		PID:         info.PID,
-		PPID:        info.PPID,
+		PPID:        ppid,
 		Comm:        info.Comm,
-		CmdLine:     strings.Join(info.CmdLine, " "),
+		CmdLine:     cmdLine,
 		ExePath:     info.ExePath,
-		WorkingDir:  info.WorkingDir,
-		Username:    info.Username,
-		ParentComm:  info.ParentComm,
+		WorkingDir:  workingDir,
+		Username:    username,
+		ParentComm:  parentComm,
 		Environment: string(envJSON),
 		ContainerID: info.ContainerID,
+		UID:         fmt.Sprintf("%d", evt.UID),
+		GID:         fmt.Sprintf("%d", evt.GID),
 	}
 
 	// Drop privileges for database operations
