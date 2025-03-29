@@ -1,4 +1,4 @@
-console.log('APP.JSX LOADED - VERSION 10 (FINAL TREE)');
+console.log('APP.JSX LOADED - VERSION 12 (PERFECT TREE)');
 
 const { useState, useEffect } = React;
 
@@ -61,15 +61,20 @@ const ProcessList = ({ processes, onSelectProcess }) => {
   );
 };
 
-// Labeled Process Tree component
-const ProcessTreeView = ({ processes, selectedProcess, onSelectProcess }) => {
+// Perfect Process Tree component
+const PerfectProcessTree = ({ processes, selectedProcess, onSelectProcess }) => {
   if (!selectedProcess) return null;
   
-  const [parentProcesses, setParentProcesses] = useState([]);
+  const [treeNodes, setTreeNodes] = useState([]);
   
   // Function to find a process by PID
   const findProcessByPid = (pid) => {
     return processes.find(p => p.pid === pid);
+  };
+  
+  // Function to find all processes with a specific PPID (children)
+  const findChildProcesses = (pid) => {
+    return processes.filter(p => p.ppid === pid);
   };
   
   // Build the process tree when selected process changes
@@ -77,25 +82,54 @@ const ProcessTreeView = ({ processes, selectedProcess, onSelectProcess }) => {
     if (!selectedProcess) return;
     
     const tree = [];
-    let currentProcess = selectedProcess;
+    
+    // Find the most distant ancestor (to prevent infinite loops, limit to 10 levels)
+    const findRootAncestor = (process, maxDepth = 10) => {
+      let current = process;
+      let ancestors = [];
+      let depth = 0;
+      
+      while (current.ppid > 0 && depth < maxDepth) {
+        const parent = findProcessByPid(current.ppid);
+        if (!parent) break;
+        
+        ancestors.unshift(parent);
+        current = parent;
+        depth++;
+      }
+      
+      return ancestors;
+    };
+    
+    // Get all ancestors
+    const ancestors = findRootAncestor(selectedProcess);
+    
+    // Add all ancestors to the tree
+    ancestors.forEach(ancestor => {
+      tree.push({
+        process: ancestor,
+        type: 'ancestor'
+      });
+    });
     
     // Add the selected process
-    tree.push(currentProcess);
+    tree.push({
+      process: selectedProcess,
+      type: 'selected'
+    });
     
-    // Add parent processes up to root (PID 1 or until we can't find more parents)
-    while (currentProcess.ppid > 0) {
-      const parentProcess = findProcessByPid(currentProcess.ppid);
-      if (!parentProcess) break;
-      
-      tree.push(parentProcess);
-      currentProcess = parentProcess;
-      
-      // Prevent infinite loops (just in case)
-      if (tree.length > 20) break;
-    }
+    // Find direct children
+    const children = findChildProcesses(selectedProcess.pid);
     
-    // Reverse the array so parents come first
-    setParentProcesses(tree.reverse());
+    // Add children
+    children.forEach(child => {
+      tree.push({
+        process: child,
+        type: 'child'
+      });
+    });
+    
+    setTreeNodes(tree);
   }, [selectedProcess, processes]);
   
   // Helper to get file name from path
@@ -107,33 +141,56 @@ const ProcessTreeView = ({ processes, selectedProcess, onSelectProcess }) => {
     return comm || '-';
   };
   
-  if (parentProcesses.length === 0) return null;
+  if (treeNodes.length === 0) return null;
   
+  // Render tree nodes
   return (
-    <div className="p-6 space-y-4 border-b border-gray-200">
-      <h3 className="text-lg font-semibold border-b pb-2">Process Tree</h3>
-      
+    <div className="border-b border-gray-200 bg-gray-50 p-3 overflow-auto max-h-80">
       <div className="space-y-1">
-        {parentProcesses.map((process, index) => {
-          const isSelected = process.pid === selectedProcess.pid;
-          const isLast = index === parentProcesses.length - 1;
+        {treeNodes.map((node, index) => {
+          const { process, type } = node;
+          const pid = process.pid;
+          const name = getFileName(process.exePath, process.comm);
+          
+          // Determine className based on node type
+          let className = "font-mono text-sm cursor-pointer hover:bg-gray-100 py-1 px-2 rounded";
+          if (type === 'selected') {
+            className += " bg-blue-50 font-bold";
+          }
+          
+          // Determine indentation and connector based on type
+          let indentStyle = {};
+          let connector = null;
+          
+          if (type === 'ancestor') {
+            // For first ancestor (top level)
+            if (index === 0) {
+              connector = <span className="inline-block text-gray-400">└─</span>;
+              indentStyle = { marginLeft: '16px' };
+            } else {
+              // For nested ancestors
+              connector = <span className="inline-block text-gray-400">└─</span>;
+              indentStyle = { marginLeft: '32px' };
+            }
+          } else if (type === 'selected') {
+            connector = null;
+            indentStyle = { marginLeft: '32px' };
+          } else if (type === 'child') {
+            connector = <span className="inline-block text-gray-400">└─</span>;
+            indentStyle = { marginLeft: '32px' };
+          }
           
           return (
             <div 
               key={process.pid} 
-              className={`font-mono text-sm cursor-pointer hover:bg-gray-100 rounded py-1 ${
-                isSelected ? 'font-bold bg-blue-50' : ''
-              }`}
-              style={{ paddingLeft: `${index * 16}px` }}
+              className={className}
               onClick={() => onSelectProcess(process)}
             >
-              {index > 0 && (
-                <span className="text-gray-400 mr-1">└─</span>
-              )}
-              <span className="text-blue-600 mr-1">{process.pid}</span>
-              <span title={process.exePath || process.comm}>
-                {getFileName(process.exePath, process.comm)}
-              </span>
+              <div style={indentStyle} className="flex items-center">
+                {connector && <span className="mr-2">{connector}</span>}
+                <span className="text-blue-600 mr-1">{pid}</span>
+                <span>{name}</span>
+              </div>
             </div>
           );
         })}
@@ -488,11 +545,11 @@ const App = () => {
           </button>
         </div>
 
-        {/* Sidebar content with labeled process tree at top */}
+        {/* Sidebar content with perfect process tree at top */}
         <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Process Tree - only show when expanded and process is selected */}
+          {/* Perfect Process Tree - only show when expanded and process is selected */}
           {!isCollapsed && selectedProcess && (
-            <ProcessTreeView 
+            <PerfectProcessTree 
               processes={processes} 
               selectedProcess={selectedProcess} 
               onSelectProcess={handleProcessSelect}
