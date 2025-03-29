@@ -2,17 +2,9 @@
 
 #include "amazon_linux_2023_kernel_6_1_vmlinux.h"
 #include "bpf_helpers.h"
+#include "common.h"  // Include common.h for structure definitions
 
 char __license[] SEC("license") = "Dual MIT/GPL";
-
-// Define the map structure type
-struct bpf_map_def {
-    unsigned int type;
-    unsigned int key_size;
-    unsigned int value_size;
-    unsigned int max_entries;
-    unsigned int map_flags;  // Add the map_flags field for toolchain
-};
 
 // Define the events map using the structure
 struct bpf_map_def SEC("maps") events = {
@@ -22,22 +14,6 @@ struct bpf_map_def SEC("maps") events = {
     .max_entries = 128,
     .map_flags = 0,  // Set flags to 0
 };
-
-// Event structure - must match Go side
-struct event {
-    u32 pid;         // Process ID
-    u32 ppid;        // Parent Process ID
-    u64 timestamp;   // Timestamp in nanoseconds
-    char comm[16];   // Process name
-    char filename[64]; // Executable path
-    int event_type;  // 1 = exec, 2 = exit
-    int exit_code;   // Exit code for exit events    
-    uid_t uid;       // User ID
-    gid_t gid;       // Group ID
-    char cwd[64];    // Current working directory
-    char args[128];  // Command line arguments
-    char parent_comm[16]; // Parent process name
-} __attribute__((packed));
 
 // Handle process execution with enhanced metadata
 SEC("tracepoint/syscalls/sys_enter_execve")
