@@ -1,11 +1,10 @@
 #ifndef __BPF_HELPERS_H
 #define __BPF_HELPERS_H
 
-#include <linux/types.h>
-
 /* Copied from libbpf for compatibility */
 #define SEC(NAME) __attribute__((section(NAME), used))
 
+// BPF helper functions
 static void *(*bpf_get_current_task)(void) = (void*) 35;
 static u64 (*bpf_get_current_pid_tgid)(void) = (void*) 14;
 static u64 (*bpf_get_current_uid_gid)(void) = (void*) 15;
@@ -18,15 +17,8 @@ static int (*bpf_perf_event_output)(void* ctx, void* map, u64 flags, void* data,
 /* Flags for bpf_perf_event_output */
 #define BPF_F_CURRENT_CPU 0xffffffffULL
 
-/* Helper macro to place programs, maps, license in different sections */
-#define BPF_CORE_READ(kernel_ptr, member)              \
-    ({ typeof(((typeof(kernel_ptr))0)->member) __val;  \
-        bpf_probe_read(&__val, sizeof(__val), &((kernel_ptr)->member));  \
-        __val;                                         \
-    })
-
-#define BPF_CORE_READ_STR_INTO(dst, kernel_ptr, member) \
-    bpf_probe_read_str(dst, sizeof(dst), &((kernel_ptr)->member))
+/* Map types from bpf.h */
+#define BPF_MAP_TYPE_PERF_EVENT_ARRAY 4
 
 #ifndef NULL
 #define NULL 0
