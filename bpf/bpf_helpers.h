@@ -13,6 +13,7 @@ static int (*bpf_probe_read_str)(void *dst, u32 size, const void *unsafe_ptr) = 
 static u64 (*bpf_ktime_get_ns)(void) = (void*) 5;
 static int (*bpf_get_current_comm)(void *buf, u32 size_of_buf) = (void*) 16;
 static int (*bpf_perf_event_output)(void* ctx, void* map, u64 flags, void* data, u64 size) = (void*) 25;
+static void* (*bpf_map_lookup_elem)(void* map, const void* key) = (void*) 1;
 
 /* Flags for bpf_perf_event_output */
 #define BPF_F_CURRENT_CPU 0xffffffffULL
