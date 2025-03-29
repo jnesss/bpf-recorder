@@ -11,6 +11,7 @@ struct bpf_map_def {
     unsigned int key_size;
     unsigned int value_size;
     unsigned int max_entries;
+    unsigned int map_flags;  // Add the map_flags field for toolchain
 };
 
 // Define the events map using the structure
@@ -19,6 +20,7 @@ struct bpf_map_def SEC("maps") events = {
     .key_size = sizeof(u32),
     .value_size = sizeof(u32),
     .max_entries = 128,
+    .map_flags = 0,  // Set flags to 0
 };
 
 // Event structure - must match Go side
