@@ -99,16 +99,26 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 		workingDir = string(bytes.TrimRight(evt.CWD[:], "\x00"))
 	}
 
-	// Process command line with fallback logic
-	cmdLine := string(bytes.TrimRight(evt.Cmdline[:], "\x00"))
+	// Process command line
+	var cmdLine string
+	if evt.CmdlineLen > 0 {
+		if evt.IsTruncated == 0 {
+			// Command line is complete in the event structure
+			cmdLine = string(bytes.TrimRight(evt.Cmdline[:evt.CmdlineLen], "\x00"))
+		} else {
+			// Command line is truncated
+			// In a full implementation, we would use the overflow buffer
+			// For now, mark as truncated and use what we have
+			cmdLine = string(bytes.TrimRight(evt.Cmdline[:], "\x00")) + " [truncated]"
 
-	// If command line is truncated, try to get full command line from /proc
-	if evt.IsTruncated != 0 {
-		if len(info.CmdLine) > 0 {
-			// Use /proc data if available
-			cmdLine = strings.Join(info.CmdLine, " ")
+			// Fallback to /proc if available
+			if len(info.CmdLine) > 0 {
+				cmdLine = strings.Join(info.CmdLine, " ")
+			}
 		}
-		// Otherwise, use the truncated command line from BPF
+	} else if len(info.CmdLine) > 0 {
+		// Fallback to /proc
+		cmdLine = strings.Join(info.CmdLine, " ")
 	}
 
 	envJSON, _ := json.Marshal(info.Environment)
@@ -179,6 +189,16 @@ func startBPFReader(reader PerfReader, eventChan chan Event) {
 		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
 			fmt.Printf("Error parsing event: %v\n", err)
 			continue
+		}
+
+		// For truncated command lines, try to read from overflow map
+		// (This part would require C bindings or syscalls to read from the BPF map)
+		// For now, we'll just log that it's truncated
+		if event.IsTruncated != 0 {
+			fmt.Printf("Command line truncated for PID %d\n", event.PID)
+			// In a full implementation, we would:
+			// 1. Read from the cmdlineOverflowMapFD
+			// 2. Store in a field of the event
 		}
 
 		// Send event for processing

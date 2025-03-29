@@ -31,14 +31,11 @@ type Event struct {
 	Filename   [64]byte
 	CWD        [64]byte
 
-	// large cmdline buffer
-	Cmdline [512]byte
-
-	// Flags
+	// Command line in the structure
+	Cmdline     [256]byte
+	CmdlineLen  uint32
 	IsTruncated uint8
-
-	// Padding
-	Pad [7]byte
+	Pad         [3]byte
 }
 
 // PerfReader defines a platform-agnostic interface for reading monitoring events.

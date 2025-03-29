@@ -37,7 +37,10 @@ func (w *perfReaderWrapper) Read() (Record, error) {
 	}, nil
 }
 
-var objs execveObjects
+var (
+	objs                 execveObjects
+	cmdlineOverflowMapFD int
+)
 
 // InitBPF initializes the eBPF program and attaches it to system hooks.
 // It returns:
@@ -86,6 +89,9 @@ func InitBPF() (PerfReader, func(), error) {
 	} else {
 		cleanupFuncs = append(cleanupFuncs, func() { exitTP.Close() })
 	}
+
+	// Get the cmdline overflow map FD
+	cmdlineOverflowMapFD = objs.CmdlineOverflow.FD()
 
 	cleanup := func() {
 		// Execute cleanup functions in reverse order
