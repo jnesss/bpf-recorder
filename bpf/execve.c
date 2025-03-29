@@ -16,12 +16,13 @@ struct bpf_map_def SEC("maps") events = {
 };
 
 // Map for overflow command lines
-struct {
-    __uint(type, BPF_MAP_TYPE_PERCPU_ARRAY);
-    __uint(key_size, sizeof(u32));
-    __uint(value_size, 512);
-    __uint(max_entries, 1);
-} cmdline_overflow SEC(".maps");
+struct bpf_map_def SEC("maps") cmdline_overflow = {
+    .type = BPF_MAP_TYPE_PERCPU_ARRAY,
+    .key_size = sizeof(u32),
+    .value_size = 512,
+    .max_entries = 1,
+    .map_flags = 0,
+};
 
 // Handle process execution with enhanced metadata
 SEC("tracepoint/syscalls/sys_enter_execve")
