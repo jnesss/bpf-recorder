@@ -18,20 +18,33 @@ typedef u32 gid_t;
 // Define pid_t 
 typedef int pid_t;
 
-// Enhanced event structure - must match the Go struct in reader.go
+// Enhanced event structure with full command line support
 struct event {
-    u32 pid;         // Process ID
-    u32 ppid;        // Parent Process ID
-    u64 timestamp;   // Timestamp in nanoseconds
-    char comm[16];   // Process name
-    char filename[64]; // Executable path
-    int event_type;  // 1 = exec, 2 = exit
-    int exit_code;   // Exit code for exit events    
-    uid_t uid;       // User ID
-    gid_t gid;       // Group ID
-    char cwd[64];    // Current working directory
-    char args[128];  // Command line arguments
-    char parent_comm[16]; // Parent process name
+    // 8-byte aligned fields
+    u64 timestamp;   // 8 bytes
+    
+    // 4-byte aligned fields
+    u32 pid;         // 4 bytes
+    u32 ppid;        // 4 bytes
+    uid_t uid;       // 4 bytes
+    gid_t gid;       // 4 bytes
+    int event_type;  // 4 bytes
+    int exit_code;   // 4 bytes
+    
+    // Variable-length fields
+    char comm[16];           // Process name
+    char parent_comm[16];    // Parent process name
+    char filename[64];       // Executable path
+    char cwd[64];            // Current working directory
+    
+    // Large command line buffer
+    char cmdline[512];       // Full command line
+    
+    // Flags
+    u8 is_truncated;         // Flag to indicate truncation
+    
+    // Padding
+    u8 _pad[7];              // Padding to ensure alignment
 } __attribute__((packed));
 
 /* BPF map definition struct */

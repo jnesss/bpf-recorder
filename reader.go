@@ -14,18 +14,31 @@ const (
 
 // Event represents a process event from the BPF layer
 type Event struct {
-	PID        uint32
-	PPID       uint32 // New field for parent PID
-	Timestamp  uint64
+	// 8-byte aligned fields
+	Timestamp uint64
+
+	// 4-byte aligned fields
+	PID       uint32
+	PPID      uint32
+	UID       uint32
+	GID       uint32
+	EventType int32
+	ExitCode  int32
+
+	// Variable-length fields
 	Comm       [16]byte
+	ParentComm [16]byte
 	Filename   [64]byte
-	EventType  int32
-	ExitCode   int32
-	UID        uint32
-	GID        uint32
-	CWD        [64]byte  // Current working directory
-	Args       [128]byte // Command line arguments
-	ParentComm [16]byte  // Parent process name
+	CWD        [64]byte
+
+	// large cmdline buffer
+	Cmdline [512]byte
+
+	// Flags
+	IsTruncated uint8
+
+	// Padding
+	Pad [7]byte
 }
 
 // PerfReader defines a platform-agnostic interface for reading monitoring events.

@@ -54,17 +54,17 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Get task_struct using helper
     void *task = bpf_get_current_task();
     
-    // Get parent PID the safe way
+    // Get parent PID using correct offsets
     u32 ppid = 0;
     void *parent = NULL;
-    bpf_probe_read(&parent, sizeof(parent), task + 2496); // Exact offset to real_parent on Amazon Linux
+    bpf_probe_read(&parent, sizeof(parent), task + 2496); // Exact offset to real_parent
     if (parent) {
-      bpf_probe_read(&ppid, sizeof(ppid), parent + 2484); // Exact offset to tgid on Amazon Linux
-      bpf_probe_read_str(&event.parent_comm, sizeof(event.parent_comm), parent + 3040); // Exact offset to comm on Amazon Linux
+        bpf_probe_read(&ppid, sizeof(ppid), parent + 2484); // Exact offset to tgid
+        bpf_probe_read_str(&event.parent_comm, sizeof(event.parent_comm), parent + 3040); // Exact offset to comm
     }
     event.ppid = ppid;
     
-    // Get UID/GID using helper function - more reliable than struct access
+    // Get UID/GID using helper function
     u64 uid_gid = bpf_get_current_uid_gid();
     event.uid = uid_gid & 0xffffffff;
     event.gid = uid_gid >> 32;
@@ -73,17 +73,48 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     const char* filename = (const char*)ctx->args[0];
     bpf_probe_read_str(&event.filename, sizeof(event.filename), filename);
     
-    // Get command line arguments (simplified - just first arg)
-    const char **args = (const char **)(ctx->args[1]);
-    const char *arg = NULL;
-    bpf_probe_read(&arg, sizeof(arg), &args[1]); // args[0] is program name
-    if (arg) {
-        bpf_probe_read_str(&event.args, sizeof(event.args), arg);
-    }
-    
-    // Working directory placeholder - this is harder to get reliably
+    // Working directory placeholder
     const char *fake_cwd = "/";
     bpf_probe_read_str(&event.cwd, sizeof(event.cwd), fake_cwd);
+    
+    // Collect command line arguments - enhanced version
+    const char **args = (const char **)(ctx->args[1]);
+    char cmd_buffer[512] = {0};
+    int offset = 0;
+    u8 truncated = 0;
+    
+    // Loop through arguments (with a reasonable upper limit)
+    for (int i = 0; i < 32; i++) {
+        const char *arg = NULL;
+        bpf_probe_read(&arg, sizeof(arg), &args[i]);
+        if (!arg) break;  // No more arguments
+        
+        // Add space between arguments
+        if (i > 0 && offset < sizeof(cmd_buffer) - 1) {
+            cmd_buffer[offset++] = ' ';
+        }
+        
+        // Read the argument string
+        char arg_buf[128];
+        bpf_probe_read_str(arg_buf, sizeof(arg_buf), arg);
+        
+        // Copy to command line buffer
+        for (int j = 0; j < sizeof(arg_buf) && arg_buf[j]; j++) {
+            if (offset >= sizeof(cmd_buffer) - 1) {
+                truncated = 1;
+                break;
+            }
+            cmd_buffer[offset++] = arg_buf[j];
+        }
+        
+        if (truncated) {
+            break;
+        }
+    }
+    
+    // Copy command line to event
+    bpf_probe_read(&event.cmdline, sizeof(event.cmdline), cmd_buffer);
+    event.is_truncated = truncated;
     
     // Output event
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &event, sizeof(event));

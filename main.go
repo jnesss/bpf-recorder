@@ -77,7 +77,6 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 	}
 
 	// Merge event data with collected process info
-	// Use BPF-collected data when available, fall back to proc-collected data
 	ppid := info.PPID
 	if evt.PPID > 0 {
 		ppid = evt.PPID
@@ -100,10 +99,16 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 		workingDir = string(bytes.TrimRight(evt.CWD[:], "\x00"))
 	}
 
-	cmdLine := strings.Join(info.CmdLine, " ")
-	if len(bytes.TrimRight(evt.Args[:], "\x00")) > 0 {
-		// If we have args from BPF, use them
-		cmdLine = string(bytes.TrimRight(evt.Args[:], "\x00"))
+	// Process command line with fallback logic
+	cmdLine := string(bytes.TrimRight(evt.Cmdline[:], "\x00"))
+
+	// If command line is truncated, try to get full command line from /proc
+	if evt.IsTruncated != 0 {
+		if len(info.CmdLine) > 0 {
+			// Use /proc data if available
+			cmdLine = strings.Join(info.CmdLine, " ")
+		}
+		// Otherwise, use the truncated command line from BPF
 	}
 
 	envJSON, _ := json.Marshal(info.Environment)
