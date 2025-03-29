@@ -59,20 +59,6 @@ struct bpf_map_def {
 /* Map types - corresponds to enum bpf_map_type */
 #define BPF_MAP_TYPE_PERF_EVENT_ARRAY 4
 
-struct trace_event_raw_sys_enter {
-    unsigned long long unused;
-    long id;
-    unsigned long args[6];
-};
-
-struct trace_event_raw_sched_process_template {
-    unsigned long long unused;
-    char comm[16];
-    pid_t pid;
-    int prio;
-    int exit_code;
-};
-
 // Placeholder for Linux-specific structs
 #if defined(__linux__)
 // This will be included in Linux builds
