@@ -1,4 +1,4 @@
-console.log('APP.JSX LOADED - VERSION 4 (RESPONSIVE)');
+console.log('APP.JSX LOADED - VERSION 7 (FINAL RESIZE)');
 
 const { useState, useEffect } = React;
 
@@ -91,7 +91,7 @@ const ProcessDetails = ({ process, isCollapsed }) => {
   };
 
   return (
-    <div className="p-4 space-y-4">
+    <div className="p-6 space-y-4">
       <h3 className="text-lg font-semibold border-b pb-2">Process Details</h3>
       
       <div className="grid grid-cols-2 gap-4">
@@ -107,33 +107,33 @@ const ProcessDetails = ({ process, isCollapsed }) => {
 
       <div>
         <label className="text-sm font-medium text-gray-600">Command</label>
-        <div className="font-mono bg-gray-50 p-2 rounded">{process.comm || '-'}</div>
+        <div className="font-mono bg-gray-50 p-3 rounded">{process.comm || '-'}</div>
       </div>
 
       <div>
         <label className="text-sm font-medium text-gray-600">Command Line</label>
-        <div className="font-mono bg-gray-50 p-2 rounded overflow-x-auto">
+        <div className="font-mono bg-gray-50 p-3 rounded overflow-x-auto">
           {process.cmdline || '-'}
         </div>
       </div>
 
       <div>
         <label className="text-sm font-medium text-gray-600">Executable Path</label>
-        <div className="font-mono bg-gray-50 p-2 rounded overflow-x-auto">
+        <div className="font-mono bg-gray-50 p-3 rounded overflow-x-auto">
           {process.exePath || '-'}
         </div>
       </div>
 
       <div>
         <label className="text-sm font-medium text-gray-600">Working Directory</label>
-        <div className="font-mono bg-gray-50 p-2 rounded overflow-x-auto">
+        <div className="font-mono bg-gray-50 p-3 rounded overflow-x-auto">
           {process.workingDir || '-'}
         </div>
       </div>
 
       <div>
         <label className="text-sm font-medium text-gray-600">Environment Variables</label>
-        <div className="bg-gray-50 p-2 rounded max-h-48 overflow-y-auto">
+        <div className="bg-gray-50 p-3 rounded max-h-48 overflow-y-auto">
           {formatEnvironment()}
         </div>
       </div>
@@ -149,9 +149,11 @@ const App = () => {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  const [sidebarWidth, setSidebarWidth] = useState(null);
+  const [isResizing, setIsResizing] = useState(false);
   
-  // Calculate sidebar width based on window size
-  const getExpandedSidebarWidth = () => {
+  // Calculate default sidebar width based on window size
+  const getDefaultSidebarWidth = () => {
     // For very narrow screens
     if (windowWidth < 640) {
       return Math.min(windowWidth * 0.9, 350); // 90% of screen up to 350px
@@ -171,18 +173,78 @@ const App = () => {
     const willExpand = isCollapsed;
     console.log(willExpand ? 'EXPANDING sidebar' : 'COLLAPSING sidebar');
     
-    const sidebarElement = document.querySelector('.sidebar-container');
-    if (sidebarElement) {
-      if (willExpand) {
-        const expandedWidth = getExpandedSidebarWidth();
+    if (willExpand) {
+      // If we're expanding, use either the saved width or default
+      const expandedWidth = sidebarWidth || getDefaultSidebarWidth();
+      const sidebarElement = document.querySelector('.sidebar-container');
+      if (sidebarElement) {
         console.log(`Setting sidebar width to ${expandedWidth}px`);
         sidebarElement.style.width = `${expandedWidth}px`;
-      } else {
-        sidebarElement.style.width = '48px';
       }
     }
     
     setIsCollapsed(!isCollapsed);
+  };
+
+  // Resize handler
+  const handleResizeStart = (e) => {
+    // Only allow resize when the sidebar is expanded
+    if (isCollapsed) return;
+    
+    // Prevent default browser behavior
+    e.preventDefault();
+    
+    // Set resize flag
+    setIsResizing(true);
+    console.log('Resize started');
+    
+    // Save initial position and width
+    const startX = e.clientX;
+    const startWidth = sidebarWidth || getDefaultSidebarWidth();
+    
+    // Create mouse move handler
+    const handleMouseMove = (moveEvent) => {
+      // Calculate how far mouse has moved
+      const deltaX = startX - moveEvent.clientX;
+      
+      // Calculate new width (moving left makes it wider)
+      let newWidth = startWidth + deltaX;
+      
+      // Apply min/max constraints
+      const minWidth = 250;
+      const maxWidth = Math.min(windowWidth * 0.8, 800);
+      newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+      
+      // Apply new width to sidebar
+      const sidebarElement = document.querySelector('.sidebar-container');
+      if (sidebarElement) {
+        sidebarElement.style.width = `${newWidth}px`;
+      }
+    };
+    
+    // Create mouse up handler
+    const handleMouseUp = (upEvent) => {
+      console.log('Resize ended');
+      setIsResizing(false);
+      
+      // Capture final width
+      const sidebarElement = document.querySelector('.sidebar-container');
+      if (sidebarElement) {
+        // Get computed width (browser might have adjusted it)
+        const computedStyle = window.getComputedStyle(sidebarElement);
+        const finalWidth = parseInt(computedStyle.width, 10);
+        console.log(`Final width: ${finalWidth}px`);
+        setSidebarWidth(finalWidth);
+      }
+      
+      // Remove event listeners
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    
+    // Add global event listeners
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
   };
 
   // Process selection handler
@@ -191,9 +253,9 @@ const App = () => {
     
     if (isCollapsed) {
       console.log('Auto-expanding sidebar for process selection');
+      const expandedWidth = sidebarWidth || getDefaultSidebarWidth();
       const sidebarElement = document.querySelector('.sidebar-container');
       if (sidebarElement) {
-        const expandedWidth = getExpandedSidebarWidth();
         console.log(`Setting sidebar width to ${expandedWidth}px`);
         sidebarElement.style.width = `${expandedWidth}px`;
       }
@@ -204,21 +266,23 @@ const App = () => {
   // Track window size
   useEffect(() => {
     const handleResize = () => {
-      setWindowWidth(window.innerWidth);
+      const newWidth = window.innerWidth;
+      setWindowWidth(newWidth);
       
-      // Also update sidebar width if it's already expanded
-      if (!isCollapsed) {
+      // If sidebar is expanded and we don't have a manually set width,
+      // update the sidebar width based on new window dimensions
+      if (!isCollapsed && !sidebarWidth) {
         const sidebarElement = document.querySelector('.sidebar-container');
         if (sidebarElement) {
-          const expandedWidth = getExpandedSidebarWidth();
-          sidebarElement.style.width = `${expandedWidth}px`;
+          const newDefaultWidth = getDefaultSidebarWidth();
+          sidebarElement.style.width = `${newDefaultWidth}px`;
         }
       }
     };
     
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [isCollapsed]);
+  }, [isCollapsed, sidebarWidth]);
 
   // Fetch process data
   useEffect(() => {
@@ -288,7 +352,7 @@ const App = () => {
         />
       )}
       
-      {/* Sidebar with responsive width */}
+      {/* Sidebar with resizable width */}
       <div 
         className="sidebar-container bg-white border-l shadow-lg flex-shrink-0 flex flex-col h-screen z-50"
         style={{ 
@@ -296,10 +360,39 @@ const App = () => {
           right: windowWidth < 768 ? '0' : 'auto',
           top: windowWidth < 768 ? '0' : 'auto',
           bottom: windowWidth < 768 ? '0' : 'auto',
-          width: isCollapsed ? '48px' : `${getExpandedSidebarWidth()}px`,
-          transition: 'width 0.3s ease'
+          width: isCollapsed ? '48px' : `${sidebarWidth || getDefaultSidebarWidth()}px`,
+          transition: isResizing ? 'none' : 'width 0.3s ease'
         }}
       >
+        {/* Resize handle - only show when expanded */}
+        {!isCollapsed && (
+          <div
+            className="absolute left-0 top-0 bottom-0 z-50"
+            onMouseDown={handleResizeStart}
+            style={{ 
+              position: 'absolute',
+              left: '-6px',  
+              width: '12px',
+              cursor: 'col-resize',
+              backgroundColor: isResizing ? 'rgba(59, 130, 246, 0.3)' : 'transparent'
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
+            }}
+            onMouseOut={(e) => {
+              if (!isResizing) {
+                e.currentTarget.style.backgroundColor = 'transparent';
+              }
+            }}
+          >
+            {/* Visual indicator for the resize handle */}
+            <div 
+              className="absolute left-6 top-0 bottom-0 w-0.5" 
+              style={{ backgroundColor: '#d1d5db' }}
+            />
+          </div>
+        )}
+
         {/* Collapse/Expand toggle button */}
         <div className="absolute left-0 top-16 -translate-x-full">
           <button
@@ -312,7 +405,7 @@ const App = () => {
           </button>
         </div>
 
-        {/* Sidebar content */}
+        {/* Sidebar content with better padding */}
         <div className="flex-1 overflow-y-auto">
           {selectedProcess ? (
             <div>
