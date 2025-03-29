@@ -1,15 +1,17 @@
 //go:build ignore
 
 #include "amazon_linux_2023_kernel_6_1_vmlinux.h"
+#include "bpf_helpers.h"
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
-struct bpf_map_def SEC("maps") events = {
-    .type = BPF_MAP_TYPE_PERF_EVENT_ARRAY,
-    .key_size = sizeof(u32),
-    .value_size = sizeof(u32),
-    .max_entries = 128,
-};
+struct {
+    __uint(type, BPF_MAP_TYPE_PERF_EVENT_ARRAY);
+    __uint(key_size, sizeof(u32));
+    __uint(value_size, sizeof(u32));
+    __uint(max_entries, 128);
+} events SEC(".maps");
+
 
 // Event structure - must match Go side
 struct event {
@@ -40,14 +42,17 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     event.event_type = 1; // EXEC event
     
     // Get task_struct using helper
-    struct task_struct *task = (struct task_struct *)bpf_get_current_task();
+    void *task = bpf_get_current_task();
     
-    // Get parent PID using CO-RE macro
-    struct task_struct *parent = BPF_CORE_READ(task, real_parent);
+    // Get parent PID the safe way
+    u32 ppid = 0;
+    void *parent = NULL;
+    bpf_probe_read(&parent, sizeof(parent), task + 0x248); // Offset to real_parent
     if (parent) {
-        event.ppid = BPF_CORE_READ(parent, tgid);
-        BPF_CORE_READ_STR_INTO(&event.parent_comm, parent, comm);
+        bpf_probe_read(&ppid, sizeof(ppid), parent + 0x228); // Offset to tgid
+        bpf_probe_read_str(&event.parent_comm, sizeof(event.parent_comm), parent + 0x550); // Offset to comm
     }
+    event.ppid = ppid;
     
     // Get UID/GID using helper function - more reliable than struct access
     u64 uid_gid = bpf_get_current_uid_gid();
