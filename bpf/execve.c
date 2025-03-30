@@ -66,70 +66,64 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Get filename (executable path)
     const char* filename = (const char*)ctx->args[0];
     bpf_probe_read_str(&event.filename, sizeof(event.filename), filename);
-
+    
     // Store PID as map ID for userspace lookup
     u32 pid = event.pid;
     event.cmdline_map_id = pid;
+    
+    // Get the arguments array
+    const char **args = (const char **)(ctx->args[1]);
     
     // Use a per-CPU array instead of stack buffer
     u32 zero = 0;
     char *buffer = bpf_map_lookup_elem(&cmdline_buffer, &zero);
     if (!buffer)
         return 0;  // Can't proceed without buffer
-
+    
+    // Initialize buffer to zeros
+    __builtin_memset(buffer, 0, 256);
+    
+    // Process args 1-9 with fixed sizes and careful bounds checking
+    #define ADD_ARG(n, maxlen) \
+        do { \
+            if (i < 250) { \
+                const char *arg = NULL; \
+                bpf_probe_read(&arg, sizeof(arg), &args[n]); \
+                if (arg) { \
+                    buffer[i++] = ' '; \
+                    bpf_probe_read_str(&buffer[i], maxlen, arg); \
+                    while (i < 250 && buffer[i] != 0) { i++; } \
+                } \
+            } \
+        } while (0)
+    
     // Get filename and first argument (usually the program name)
     const char *arg0 = NULL;
     bpf_probe_read(&arg0, sizeof(arg0), &args[0]);
-
-    // Initialize buffer to zeros
-    __builtin_memset(buffer, 0, 256);
-
-    // We'll take a very conservative approach with fixed buffers
-    // Capture just the first three arguments with fixed sizes
     if (arg0) {
-        // First argument - copy up to 100 bytes
-        bpf_probe_read_str(buffer, 100, arg0);
+        bpf_probe_read_str(buffer, 60, arg0);
     }
-
-    // Try to add second argument
-    const char *arg1 = NULL;
-    bpf_probe_read(&arg1, sizeof(arg1), &args[1]);
-    if (arg1) {
-        // Find end of current string
-        int i = 0;
-        for (i = 0; i < 99; i++) {
-            if (buffer[i] == 0)
-                break;
-        }
     
-        // Add space and second argument if we have room
-        if (i < 99) {
-            buffer[i] = ' ';
-            bpf_probe_read_str(&buffer[i+1], 100, arg1);
-        }
+    // Find current position
+    int i = 0;
+    while (i < 59 && buffer[i] != 0) {
+        i++;
     }
-
-    // Try to add third argument
-    const char *arg2 = NULL;
-    bpf_probe_read(&arg2, sizeof(arg2), &args[2]);
-    if (arg2) {
-        // Find end of current string
-        int i = 0;
-        for (i = 0; i < 199; i++) {
-            if (buffer[i] == 0)
-                break;
-        }
     
-        // Add space and third argument if we have room
-        if (i < 199) {
-            buffer[i] = ' ';
-            bpf_probe_read_str(&buffer[i+1], 50, arg2);
-        }
-    }
-
+    // Add remaining arguments with reducing size allocations
+    ADD_ARG(1, 50);
+    ADD_ARG(2, 40);
+    ADD_ARG(3, 30);
+    ADD_ARG(4, 20);
+    ADD_ARG(5, 15);
+    ADD_ARG(6, 10);
+    ADD_ARG(7, 10);
+    ADD_ARG(8, 10);
+    ADD_ARG(9, 10);
+    
     // Make sure it's null-terminated
     buffer[255] = '\0';
-
+    
     // Update the cmdlines map with the buffer
     bpf_map_update_elem(&cmdlines, &pid, buffer, BPF_ANY);
     
