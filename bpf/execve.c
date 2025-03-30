@@ -66,41 +66,47 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Create a buffer on the stack
     char buffer[256];
     __builtin_memset(buffer, 0, sizeof(buffer));
-    
-    // Position in buffer
-    int offset = 0;
-    
+
     // Get the arguments array
     const char **args = (const char **)(ctx->args[1]);
 
-    // Loop through arguments to build command line string
-    for (int i = 0; i < 10 && offset < sizeof(buffer) - 1; i++) {
-        // Get the next argument
-        const char *arg = NULL;
-        bpf_probe_read(&arg, sizeof(arg), &args[i]);
-    
-        if (!arg)
-            break;  // No more arguments
-    
-        // Add space between arguments (not before the first one)
-        if (i > 0 && offset < sizeof(buffer) - 1) {
-            buffer[offset++] = ' ';
-        }
-    
-        // Read the argument into our buffer
-        int bytes_read = bpf_probe_read_str(&buffer[offset], sizeof(buffer) - offset, arg);
-    
-        // If bytes_read is <= 0, something went wrong
-        if (bytes_read <= 0)
-            break;
-    
-        // Adjust offset, accounting for null terminator in bytes_read
-        offset += (bytes_read - 1);
+    // First, copy the executable name (args[0])
+    const char *arg0 = NULL;
+    bpf_probe_read(&arg0, sizeof(arg0), &args[0]);
+    if (arg0) {
+        bpf_probe_read_str(buffer, 100, arg0);
     }
 
-    // Ensure null termination
-    if (offset < sizeof(buffer))
-        buffer[offset] = '\0';
+    // Now try to add arg1 if it exists
+    const char *arg1 = NULL;
+    bpf_probe_read(&arg1, sizeof(arg1), &args[1]);
+    if (arg1) {
+        // Add a space between arg0 and arg1
+        int len = 0;
+        // Find end of existing string
+        for (; len < 99 && buffer[len]; len++) {}
+    
+        if (len < 99) {
+            buffer[len++] = ' ';
+            // Copy arg1
+            bpf_probe_read_str(&buffer[len], 100, arg1);
+        }
+    }
+
+    // Try to add arg2
+    const char *arg2 = NULL;
+    bpf_probe_read(&arg2, sizeof(arg2), &args[2]);
+    if (arg2) {
+        // Find end of existing string
+        int len = 0;
+        for (; len < 199 && buffer[len]; len++) {}
+    
+        if (len < 199) {
+            buffer[len++] = ' ';
+            // Copy arg2
+            bpf_probe_read_str(&buffer[len], 56, arg2);
+        }
+    }
 
     // Update the map with the buffer
     bpf_map_update_elem(&cmdlines, &pid, buffer, BPF_ANY);
