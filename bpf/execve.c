@@ -98,6 +98,8 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     const char *arg0 = NULL;
     bpf_probe_read(&arg0, sizeof(arg0), &args[0]);
     if (arg0) {
+        // Clear the region first (for additional safety)
+        __builtin_memset(buffer, 0, 192);
         bpf_probe_read_str(buffer, 192, arg0);
     }
     
