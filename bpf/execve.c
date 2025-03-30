@@ -100,35 +100,29 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     const char *arg0 = NULL;
     bpf_probe_read(&arg0, sizeof(arg0), &args[0]);
     if (arg0) {
-        // Read string with a length limit
         bpf_probe_read_str(buffer, 192, arg0);
-        buffer[191] = '\0';
     }
 
     // Arg 1 - starts at offset 192, max 160 bytes
     const char *arg1 = NULL;
     bpf_probe_read(&arg1, sizeof(arg1), &args[1]);
     if (arg1) {
-        // Add a space if we have content in buffer
+        // Add a space only if we have content in buffer AND it's not a null character
         if (buffer[0] != 0) {
             buffer[191] = ' ';
         }
-        // Read string with a length limit
         bpf_probe_read_str(buffer + 192, 160, arg1);
-        buffer[351] = '\0';
     }
 
     // Arg 2 - starts at offset 352, max 160 bytes
     const char *arg2 = NULL;
     bpf_probe_read(&arg2, sizeof(arg2), &args[2]);
     if (arg2) {
-        // Add a space if we have content before
+        // Add a space only if we have content before
         if (buffer[192] != 0) {
             buffer[351] = ' ';
         }
-        // Read string with a length limit
         bpf_probe_read_str(buffer + 352, 160, arg2);
-        buffer[511] = '\0';
     }
 
     // Arg 3 - starts at offset 512, max 128 bytes
@@ -139,7 +133,6 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[511] = ' ';
         }
         bpf_probe_read_str(buffer + 512, 128, arg3);
-        buffer[639] = '\0';
     }
 
     // Arg 4 - starts at offset 640, max 128 bytes
@@ -150,7 +143,6 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[639] = ' ';
         }
         bpf_probe_read_str(buffer + 640, 128, arg4);
-        buffer[767] = '\0';
     }
 
     // Arg 5 - starts at offset 768, max 96 bytes
@@ -161,7 +153,6 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[767] = ' ';
         }
         bpf_probe_read_str(buffer + 768, 96, arg5);
-        buffer[863] = '\0';
     }
 
     // Arg 6 - starts at offset 864, max 96 bytes
@@ -172,7 +163,6 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[863] = ' ';
         }
         bpf_probe_read_str(buffer + 864, 96, arg6);
-        buffer[959] = '\0';
     }
 
     // Arg 7 - starts at offset 960, max 64 bytes
@@ -183,10 +173,9 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[959] = ' ';
         }
         bpf_probe_read_str(buffer + 960, 64, arg7);
-        buffer[1023] = '\0';
     }
 
-    // Final safety check - ensure the very end is null-terminated
+    // Make sure it's null-terminated
     buffer[1023] = '\0';
     
     // Update the cmdlines map with the buffer

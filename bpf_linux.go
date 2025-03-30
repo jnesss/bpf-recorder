@@ -105,7 +105,6 @@ func InitBPF() (PerfReader, func(), error) {
 }
 
 // LookupCmdline retrieves the command line for a process
-// LookupCmdline retrieves the command line for a process
 func LookupCmdline(pid uint32) (string, error) {
 	// Make sure we have a valid map
 	if objs.Cmdlines == nil {
@@ -121,11 +120,36 @@ func LookupCmdline(pid uint32) (string, error) {
 		return "", fmt.Errorf("map lookup error: %v", err)
 	}
 
-	// Convert to string and only keep up to the first null byte
-	rawCmdLine := string(value[:])
-	if idx := strings.Index(rawCmdLine, "\x00"); idx >= 0 {
-		rawCmdLine = rawCmdLine[:idx]
+	// Replace nulls with spaces and handle non-printable characters
+	var builder strings.Builder
+	inNull := false
+	for i, b := range value {
+		if b == 0 {
+			if !inNull {
+				builder.WriteByte(' ')
+				inNull = true
+			}
+		} else if b >= 32 && b <= 126 { // ASCII printable range
+			builder.WriteByte(b)
+			inNull = false
+		} else if b == 9 || b == 10 || b == 13 { // Tab, LF, CR
+			if !inNull {
+				builder.WriteByte(' ')
+				inNull = true
+			}
+		}
+
+		// Break at the end
+		if i >= 1023 {
+			break
+		}
 	}
 
-	return rawCmdLine, nil
+	// Clean up consecutive spaces
+	cmdLine := builder.String()
+	for strings.Contains(cmdLine, "  ") {
+		cmdLine = strings.ReplaceAll(cmdLine, "  ", " ")
+	}
+
+	return strings.TrimSpace(cmdLine), nil
 }
