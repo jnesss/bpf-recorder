@@ -37,7 +37,10 @@ func (w *perfReaderWrapper) Read() (Record, error) {
 	}, nil
 }
 
-var objs execveObjects
+var (
+	objs          execveObjects
+	cmdlinesMapFD int // For the command line map
+)
 
 // InitBPF initializes the eBPF program and attaches it to system hooks.
 // It returns:
@@ -54,6 +57,8 @@ func InitBPF() (PerfReader, func(), error) {
 	if err := loadExecveObjects(&objs, nil); err != nil {
 		return nil, nil, fmt.Errorf("failed to load BPF objects: %v", err)
 	}
+
+	cmdlinesMapFD = objs.Cmdlines.FD()
 
 	// Create perf reader
 	reader, err := perf.NewReader(objs.Events, os.Getpagesize()*8)

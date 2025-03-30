@@ -15,6 +15,15 @@ struct bpf_map_def SEC("maps") events = {
     .map_flags = 0,
 };
 
+// Define a map for command lines keyed by PID
+struct bpf_map_def SEC("maps") cmdlines = {
+    .type = BPF_MAP_TYPE_HASH,
+    .key_size = sizeof(u32),
+    .value_size = 256,  // Start with 256 bytes for command line
+    .max_entries = 1024,
+    .map_flags = 0,
+};
+
 // Handle process execution with enhanced metadata
 SEC("tracepoint/syscalls/sys_enter_execve")
 int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx) {
@@ -48,6 +57,14 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Get filename (executable path)
     const char* filename = (const char*)ctx->args[0];
     bpf_probe_read_str(&event.filename, sizeof(event.filename), filename);
+    
+    // Store just the executable path in our command line map
+    // We'll use the PID as the key
+    u32 pid = event.pid;
+    event.cmdline_map_id = pid;  // Set the ID for userspace lookup
+    
+    // Try to store the filename in the cmdlines map as a starting point
+    bpf_map_update_elem(&cmdlines, &pid, &event.filename, BPF_ANY);
     
     // Working directory placeholder
     const char *fake_cwd = "/";

@@ -37,6 +37,9 @@ struct event {
     char filename[64];       // Executable path
     char cwd[64];            // Current working directory
     
+    // For command line tracking
+    u32 cmdline_map_id;      // ID to lookup command line in the map
+    
 } __attribute__((packed));
 
 /* BPF map definition struct */

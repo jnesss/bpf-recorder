@@ -9,6 +9,8 @@ package main
 
 import "fmt"
 
+var cmdlinesMapFD int // Will be 0 on macOS since BPF isn't supported
+
 // InitBPF provides a stub implementation for MacOS.
 // Returns nil reader but no error so the program can continue with web UI
 func InitBPF() (PerfReader, func(), error) {

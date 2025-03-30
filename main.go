@@ -172,6 +172,27 @@ func startBPFReader(reader PerfReader, eventChan chan Event) {
 			continue
 		}
 
+		// Add this debug code:
+		if event.EventType == EventExec {
+			// Try to read command line from map
+			if cmdlinesMapFD != 0 {
+				// Create a key and value for reading from the map
+				key := event.PID
+				var value [256]byte
+
+				// Just initialize value to avoid compiler error
+				// This is temporary until we actually read from the map
+				_ = value
+
+				// Debug output
+				fmt.Printf("Trying to read cmdline for PID %d\n", key)
+
+				// In a real implementation, you'd use bpf.LookupElement to read from the map
+				// For now, just use the filename as a placeholder
+				fmt.Printf("Executable: %s\n", strings.TrimRight(string(event.Filename[:]), "\x00"))
+			}
+		}
+
 		// Send event for processing
 		eventChan <- event
 	}
