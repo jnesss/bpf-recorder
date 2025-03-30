@@ -81,11 +81,13 @@ const PerfectProcessTree = ({ processes, selectedProcess, onSelectProcess }) => 
   useEffect(() => {
     if (!selectedProcess) return;
   
+    console.log("Selected process:", selectedProcess);
+  
     // Fetch the full process tree for the selected process
     fetch(`/api/processes?pid=${selectedProcess.pid}`)
       .then(response => response.json())
       .then(data => {
-        // Process the data to build the tree
+        console.log("Process tree data:", data);
         const tree = [];
       
         // Create a map of processes by PID for easy lookup

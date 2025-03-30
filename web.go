@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -154,6 +153,8 @@ func startWebServer(db *DB) error {
 
 // Helper function to fetch a process and its ancestors
 func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
+	fmt.Printf("Fetching process tree for PID %d\n", pid)
+
 	var processes []ProcessRow
 	var pidList []uint32
 	currentPid := pid
@@ -162,18 +163,21 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 	for currentPid > 0 {
 		// Add the current PID to our list
 		pidList = append(pidList, currentPid)
+		fmt.Printf("Added PID %d to list\n", currentPid)
 
 		// Find the parent PID
 		var ppid uint32
 		err := db.db.QueryRow("SELECT ppid FROM processes WHERE pid = ? ORDER BY timestamp DESC LIMIT 1", currentPid).Scan(&ppid)
 		if err != nil {
 			if err == sql.ErrNoRows {
+				fmt.Printf("No rows found for PID %d\n", currentPid)
 				// No more ancestors found, break the loop
 				break
 			}
 			return nil, err
 		}
 
+		fmt.Printf("Found parent PID %d for PID %d\n", ppid, currentPid)
 		// Move up to the parent for the next iteration
 		currentPid = ppid
 
@@ -182,6 +186,8 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 			break
 		}
 	}
+
+	fmt.Printf("PIDs to fetch: %v\n", pidList)
 
 	// Now fetch all processes in the tree
 	if len(pidList) > 0 {
@@ -193,14 +199,21 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 			args = append(args, p)
 		}
 
-		query := fmt.Sprintf(`
+		query := `
             SELECT 
                 id, timestamp, pid, ppid, comm, cmdline, exe_path,
                 working_dir, username, parent_comm, environment, container_id
             FROM processes 
-            WHERE pid IN (%s)
-            ORDER BY timestamp DESC
-        `, strings.Join(placeholders, ","))
+            WHERE `
+
+		for i, p := range pidList {
+			if i > 0 {
+				query += " OR "
+			}
+			query += fmt.Sprintf("pid = %d", p)
+		}
+
+		query += " ORDER BY timestamp DESC"
 
 		rows, err := db.db.Query(query, args...)
 		if err != nil {
