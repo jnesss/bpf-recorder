@@ -80,57 +80,62 @@ const PerfectProcessTree = ({ processes, selectedProcess, onSelectProcess }) => 
   // Build the process tree when selected process changes
   useEffect(() => {
     if (!selectedProcess) return;
-    
-    const tree = [];
-    
-    // Find the most distant ancestor (to prevent infinite loops, limit to 10 levels)
-    const findRootAncestor = (process, maxDepth = 10) => {
-      let current = process;
-      let ancestors = [];
-      let depth = 0;
+  
+    // Fetch the full process tree for the selected process
+    fetch(`/api/processes?pid=${selectedProcess.pid}`)
+      .then(response => response.json())
+      .then(data => {
+        // Process the data to build the tree
+        const tree = [];
       
-      while (current.ppid > 0 && depth < maxDepth) {
-        const parent = findProcessByPid(current.ppid);
-        if (!parent) break;
-        
-        ancestors.unshift(parent);
-        current = parent;
-        depth++;
-      }
+        // Create a map of processes by PID for easy lookup
+        const processMap = {};
+        data.forEach(process => {
+          processMap[process.pid] = process;
+        });
       
-      return ancestors;
-    };
-    
-    // Get all ancestors
-    const ancestors = findRootAncestor(selectedProcess);
-    
-    // Add all ancestors to the tree
-    ancestors.forEach(ancestor => {
-      tree.push({
-        process: ancestor,
-        type: 'ancestor'
-      });
-    });
-    
-    // Add the selected process
-    tree.push({
-      process: selectedProcess,
-      type: 'selected'
-    });
-    
-    // Find direct children
-    const children = findChildProcesses(selectedProcess.pid);
-    
-    // Add children
-    children.forEach(child => {
-      tree.push({
-        process: child,
-        type: 'child'
-      });
-    });
-    
-    setTreeNodes(tree);
-  }, [selectedProcess, processes]);
+        // Find the selected process in our fetched data
+        const selected = processMap[selectedProcess.pid] || selectedProcess;
+      
+        // Traverse up to build ancestors
+        const ancestors = [];
+        let current = selected;
+        while (current && current.ppid > 0) {
+          const parent = processMap[current.ppid];
+          if (!parent) break;
+          ancestors.unshift(parent);
+          current = parent;
+        }
+      
+        // Add ancestors to tree
+        ancestors.forEach(ancestor => {
+          tree.push({
+            process: ancestor,
+            type: 'ancestor'
+          });
+        });
+      
+        // Add selected process
+        tree.push({
+          process: selected,
+          type: 'selected'
+        });
+      
+        // Find direct children (if any in our data)
+        const children = data.filter(p => p.ppid === selected.pid);
+      
+        // Add children
+        children.forEach(child => {
+          tree.push({
+            process: child,
+            type: 'child'
+          });
+        });
+      
+        setTreeNodes(tree);
+      })
+      .catch(error => console.error('Error fetching process tree:', error));
+  }, [selectedProcess]);
   
   // Helper to get file name from path
   const getFileName = (path, comm) => {

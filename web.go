@@ -1,12 +1,15 @@
 package main
 
 import (
+	"database/sql" // Add this for sql.ErrNoRows
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -86,6 +89,29 @@ func startWebServer(db *DB) error {
 	// API endpoint for process data
 	http.HandleFunc("/api/processes", debugHandler(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Fetching process data from database\n")
+
+		// Check if a specific PID was requested for the process tree
+		pidParam := r.URL.Query().Get("pid")
+		if pidParam != "" {
+			// Fetch a specific process and its ancestors
+			pid, err := strconv.Atoi(pidParam)
+			if err != nil {
+				http.Error(w, "Invalid PID", 400)
+				return
+			}
+
+			processes, err := fetchProcessTree(db, uint32(pid))
+			if err != nil {
+				http.Error(w, err.Error(), 500)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(processes)
+			return
+		}
+
+		// Default: fetch recent processes
 		rows, err := db.db.Query(`
             SELECT 
                 id, timestamp, pid, ppid, comm, cmdline, exe_path,
@@ -124,4 +150,88 @@ func startWebServer(db *DB) error {
 
 	fmt.Printf("Starting web server on :8080\n")
 	return http.ListenAndServe(":8080", nil)
+}
+
+// Helper function to fetch a process and its ancestors
+func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
+	var processes []ProcessRow
+	var pidList []uint32
+	currentPid := pid
+
+	// First, build a list of PIDs we need to fetch (the process and all its ancestors)
+	for currentPid > 0 {
+		// Add the current PID to our list
+		pidList = append(pidList, currentPid)
+
+		// Find the parent PID
+		var ppid uint32
+		err := db.db.QueryRow("SELECT ppid FROM processes WHERE pid = ? ORDER BY timestamp DESC LIMIT 1", currentPid).Scan(&ppid)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				// No more ancestors found, break the loop
+				break
+			}
+			return nil, err
+		}
+
+		// Move up to the parent for the next iteration
+		currentPid = ppid
+
+		// Safety check to prevent infinite loops
+		if len(pidList) > 100 {
+			break
+		}
+	}
+
+	// Now fetch all processes in the tree
+	if len(pidList) > 0 {
+		// Convert PID list to a string for the IN clause
+		var placeholders []string
+		var args []interface{}
+		for _, p := range pidList {
+			placeholders = append(placeholders, "?")
+			args = append(args, p)
+		}
+
+		query := fmt.Sprintf(`
+            SELECT 
+                id, timestamp, pid, ppid, comm, cmdline, exe_path,
+                working_dir, username, parent_comm, environment, container_id
+            FROM processes 
+            WHERE pid IN (%s)
+            ORDER BY timestamp DESC
+        `, strings.Join(placeholders, ","))
+
+		rows, err := db.db.Query(query, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		// Build a map to keep only the most recent entry for each PID
+		pidMap := make(map[uint32]ProcessRow)
+		for rows.Next() {
+			var p ProcessRow
+			err := rows.Scan(
+				&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
+				&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
+				&p.ParentComm, &p.Environment, &p.ContainerID,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			// Only keep the most recent entry for each PID
+			if existing, ok := pidMap[p.PID]; !ok || p.Timestamp.After(existing.Timestamp) {
+				pidMap[p.PID] = p
+			}
+		}
+
+		// Convert map back to slice
+		for _, p := range pidMap {
+			processes = append(processes, p)
+		}
+	}
+
+	return processes, nil
 }
