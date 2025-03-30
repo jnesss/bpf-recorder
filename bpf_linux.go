@@ -112,7 +112,7 @@ func LookupCmdline(pid uint32) (string, error) {
 	}
 
 	// Create buffer for reading from map
-	var value [512]byte // Increased to match BPF code
+	var value [1024]byte // Increased to match BPF code
 
 	// Lookup the value
 	err := objs.Cmdlines.Lookup(&pid, &value)
