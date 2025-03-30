@@ -104,12 +104,23 @@ func InitBPF() (PerfReader, func(), error) {
 	return &perfReaderWrapper{reader}, cleanup, nil
 }
 
-// Add a function to lookup values from the cmdlines map
+// LookupCmdline retrieves the command line for a process
 func LookupCmdline(pid uint32) (string, error) {
-	var value [512]byte
+	// Make sure we have a valid map
+	if objs.Cmdlines == nil {
+		return "", fmt.Errorf("cmdlines map not initialized")
+	}
+
+	// Create buffer for reading from map
+	var value [512]byte // Increased to match BPF code
+
+	// Lookup the value
 	err := objs.Cmdlines.Lookup(&pid, &value)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("map lookup error: %v", err)
 	}
-	return strings.TrimRight(string(value[:]), "\x00"), nil
+
+	// Convert to string and trim nulls
+	cmdLine := strings.TrimRight(string(value[:]), "\x00")
+	return cmdLine, nil
 }
