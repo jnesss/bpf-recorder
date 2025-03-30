@@ -66,6 +66,9 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Create a buffer for the map
     char buffer[512];
     __builtin_memset(buffer, 0, sizeof(buffer));
+    
+    // Get the arguments array
+    const char **args = (const char **)(ctx->args[1]);
 
     // Track our position in the buffer
     int offset = 0;
