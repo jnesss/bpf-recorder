@@ -15,15 +15,6 @@ struct bpf_map_def SEC("maps") events = {
     .map_flags = 0,
 };
 
-// Map for overflow command lines
-struct bpf_map_def SEC("maps") cmdline_overflow = {
-    .type = BPF_MAP_TYPE_PERCPU_ARRAY,
-    .key_size = sizeof(u32),
-    .value_size = 512,
-    .max_entries = 1,
-    .map_flags = 0,
-};
-
 // Handle process execution with enhanced metadata
 SEC("tracepoint/syscalls/sys_enter_execve")
 int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx) {
@@ -62,99 +53,8 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     const char *fake_cwd = "/";
     bpf_probe_read_str(&event.cwd, sizeof(event.cwd), fake_cwd);
     
-    // Collect command line arguments directly into event structure
-    const char **args = (const char **)(ctx->args[1]);
-    int offset = 0;
-    u8 truncated = 0;
-    
-    // Get map for overflow if needed
-    u32 zero = 0;
-    char *overflow_buf = NULL;
-    
-    // Loop through arguments to build command line
-    for (int i = 0; i < 32; i++) {
-        const char *arg = NULL;
-        bpf_probe_read(&arg, sizeof(arg), &args[i]);
-        if (!arg) break;  // No more arguments
-        
-        // Add space between arguments
-        if (i > 0 && offset < sizeof(event.cmdline) - 1) {
-            event.cmdline[offset++] = ' ';
-        } else if (i > 0 && truncated) {
-            // We're in overflow mode
-            if (!overflow_buf) {
-                overflow_buf = bpf_map_lookup_elem(&cmdline_overflow, &zero);
-                if (!overflow_buf) {
-                    break; // Can't use overflow buffer
-                }
-            }
-            overflow_buf[offset++] = ' ';
-            if (offset >= 511) {
-                break; // Out of space even in overflow buffer
-            }
-        }
-        
-        // Read the argument string
-        char arg_buf[64];
-        bpf_probe_read_str(arg_buf, sizeof(arg_buf), arg);
-        
-        // Copy to appropriate buffer
-        for (int j = 0; j < sizeof(arg_buf) && arg_buf[j]; j++) {
-            if (!truncated && offset < sizeof(event.cmdline) - 1) {
-                // Still using event structure buffer (now 64 bytes)
-                event.cmdline[offset++] = arg_buf[j];
-            } else {
-                // Need to use overflow buffer
-                if (!truncated) {
-                    // First time hitting truncation
-                    truncated = 1;
-                    // Get overflow buffer
-                    overflow_buf = bpf_map_lookup_elem(&cmdline_overflow, &zero);
-                    if (!overflow_buf) {
-                        break; // Can't use overflow buffer
-                    }
-            
-                    // Copy what we have so far to overflow buffer
-                    for (int k = 0; k < offset; k++) {
-                        overflow_buf[k] = event.cmdline[k];
-                    }
-                }
-        
-                if (offset < 511) {
-                    overflow_buf[offset++] = arg_buf[j];
-                } else {
-                    break; // Out of space even in overflow buffer
-                }
-            }
-        }
-        
-        if (truncated && !overflow_buf) {
-            break; // Can't use overflow buffer
-        }
-        
-        if (truncated && offset >= 511) {
-            break; // Out of space even in overflow buffer
-        }
-    }
-    
-    // Ensure null termination
-    if (!truncated) {
-        if (offset < sizeof(event.cmdline)) {
-            event.cmdline[offset] = '\0';
-        } else {
-            event.cmdline[sizeof(event.cmdline) - 1] = '\0';
-        }
-    } else if (overflow_buf) {
-        if (offset < 512) {
-            overflow_buf[offset] = '\0';
-        } else {
-            overflow_buf[511] = '\0';
-        }
-    }
-    
-    // Set command line length and truncation flag
-    event.cmdline_len = offset;
-    event.is_truncated = truncated;
+    // Placeholder for future command line implementation
+    // Command line will be handled separately
     
     // Output event
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &event, sizeof(event));

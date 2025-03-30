@@ -37,11 +37,6 @@ struct event {
     char filename[64];       // Executable path
     char cwd[64];            // Current working directory
     
-    // Command line in the structure
-    char cmdline[64];       // Command line (inline for most cases)
-    u32 cmdline_len;         // Length of command line
-    u8 is_truncated;         // Flag to indicate truncation
-    u8 _pad[3];              // Padding to ensure alignment
 } __attribute__((packed));
 
 /* BPF map definition struct */
