@@ -67,17 +67,9 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     const char* filename = (const char*)ctx->args[0];
     bpf_probe_read_str(&event.filename, sizeof(event.filename), filename);
 
-    // Store just the executable path in our command line map
-    // We'll use the PID as the key
+    // Store PID as map ID for userspace lookup
     u32 pid = event.pid;
-    event.cmdline_map_id = pid;  // Set the ID for userspace lookup
-
-    // Create a buffer for the map
-    char buffer[512];
-    __builtin_memset(buffer, 0, sizeof(buffer));
-    
-    // Get the arguments array
-    const char **args = (const char **)(ctx->args[1]);
+    event.cmdline_map_id = pid;
     
     // Use a per-CPU array instead of stack buffer
     u32 zero = 0;
@@ -87,6 +79,9 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     
     // Initialize buffer to zeros
     __builtin_memset(buffer, 0, 512);
+
+    // Get the arguments array
+    const char **args = (const char **)(ctx->args[1]);
 
     // Track our position in the buffer
     int offset = 0;
