@@ -99,8 +99,20 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 		workingDir = string(bytes.TrimRight(evt.CWD[:], "\x00"))
 	}
 
-	// Placeholder for command line - empty for now
-	cmdLine := "" // Will be implemented later
+	// Get command line from BPF map
+	cmdLine := ""
+	if cmdlinesMapFD != 0 {
+		fullCmdLine, err := LookupCmdline(evt.PID)
+		if err == nil && fullCmdLine != "" {
+			cmdLine = fullCmdLine
+		} else if len(info.CmdLine) > 0 {
+			// Fallback to /proc
+			cmdLine = strings.Join(info.CmdLine, " ")
+		}
+	} else if len(info.CmdLine) > 0 {
+		// Fallback to /proc
+		cmdLine = strings.Join(info.CmdLine, " ")
+	}
 
 	envJSON, _ := json.Marshal(info.Environment)
 	dbRecord := &ProcessRecord{
