@@ -19,8 +19,17 @@ struct bpf_map_def SEC("maps") events = {
 struct bpf_map_def SEC("maps") cmdlines = {
     .type = BPF_MAP_TYPE_HASH,
     .key_size = sizeof(u32),
-    .value_size = 256,  // Start with 256 bytes for command line
+    .value_size = 512,  // Command line buffer size
     .max_entries = 1024,
+    .map_flags = 0,
+};
+
+// Define a per-CPU array for our command line buffer
+struct bpf_map_def SEC("maps") cmdline_buffer = {
+    .type = BPF_MAP_TYPE_PERCPU_ARRAY,
+    .key_size = sizeof(u32),
+    .value_size = 512,
+    .max_entries = 1,
     .map_flags = 0,
 };
 
@@ -69,6 +78,15 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     
     // Get the arguments array
     const char **args = (const char **)(ctx->args[1]);
+    
+    // Use a per-CPU array instead of stack buffer
+    u32 zero = 0;
+    char *buffer = bpf_map_lookup_elem(&cmdline_buffer, &zero);
+    if (!buffer)
+        return 0;  // Can't proceed without buffer
+    
+    // Initialize buffer to zeros
+    __builtin_memset(buffer, 0, 512);
 
     // Track our position in the buffer
     int offset = 0;
@@ -123,7 +141,7 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Ensure null termination
     buffer[511] = '\0';
 
-    // Update the map with the buffer
+    // Update the cmdlines map with the buffer
     bpf_map_update_elem(&cmdlines, &pid, buffer, BPF_ANY);
     
     // Working directory placeholder
