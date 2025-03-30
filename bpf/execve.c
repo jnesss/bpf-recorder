@@ -57,14 +57,21 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Get filename (executable path)
     const char* filename = (const char*)ctx->args[0];
     bpf_probe_read_str(&event.filename, sizeof(event.filename), filename);
-    
+
     // Store just the executable path in our command line map
     // We'll use the PID as the key
     u32 pid = event.pid;
     event.cmdline_map_id = pid;  // Set the ID for userspace lookup
-    
-    // Try to store the filename in the cmdlines map as a starting point
-    bpf_map_update_elem(&cmdlines, &pid, &event.filename, BPF_ANY);
+
+    // Create a buffer on the stack
+    char buffer[256];
+    __builtin_memset(buffer, 0, sizeof(buffer));
+
+    // Copy the filename into the buffer (just the first argument for now)
+    bpf_probe_read_str(buffer, sizeof(buffer), filename);
+
+    // Update the map with the buffer
+    bpf_map_update_elem(&cmdlines, &pid, buffer, BPF_ANY);
     
     // Working directory placeholder
     const char *fake_cwd = "/";
