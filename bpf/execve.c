@@ -66,9 +66,41 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Create a buffer on the stack
     char buffer[256];
     __builtin_memset(buffer, 0, sizeof(buffer));
+    
+    // Position in buffer
+    int offset = 0;
+    
+    // Get the arguments array
+    const char **args = (const char **)(ctx->args[1]);
 
-    // Copy the filename into the buffer (just the first argument for now)
-    bpf_probe_read_str(buffer, sizeof(buffer), filename);
+    // Loop through arguments to build command line string
+    for (int i = 0; i < 10 && offset < sizeof(buffer) - 1; i++) {
+        // Get the next argument
+        const char *arg = NULL;
+        bpf_probe_read(&arg, sizeof(arg), &args[i]);
+    
+        if (!arg)
+            break;  // No more arguments
+    
+        // Add space between arguments (not before the first one)
+        if (i > 0 && offset < sizeof(buffer) - 1) {
+            buffer[offset++] = ' ';
+        }
+    
+        // Read the argument into our buffer
+        int bytes_read = bpf_probe_read_str(&buffer[offset], sizeof(buffer) - offset, arg);
+    
+        // If bytes_read is <= 0, something went wrong
+        if (bytes_read <= 0)
+            break;
+    
+        // Adjust offset, accounting for null terminator in bytes_read
+        offset += (bytes_read - 1);
+    }
+
+    // Ensure null termination
+    if (offset < sizeof(buffer))
+        buffer[offset] = '\0';
 
     // Update the map with the buffer
     bpf_map_update_elem(&cmdlines, &pid, buffer, BPF_ANY);
@@ -76,9 +108,6 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Working directory placeholder
     const char *fake_cwd = "/";
     bpf_probe_read_str(&event.cwd, sizeof(event.cwd), fake_cwd);
-    
-    // Placeholder for future command line implementation
-    // Command line will be handled separately
     
     // Output event
     bpf_perf_event_output(ctx, &events, BPF_F_CURRENT_CPU, &event, sizeof(event));
