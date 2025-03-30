@@ -172,20 +172,16 @@ func startBPFReader(reader PerfReader, eventChan chan Event) {
 			continue
 		}
 
-		// Add this debug code:
 		if event.EventType == EventExec {
 			// Try to read command line from map
-			if cmdlinesMapFD != 0 {
-				// Create a key and value for reading from the map
+			if CmdlinesMapFD != 0 {
 				key := event.PID
-				var value [256]byte
 
 				// Lookup the command line from the map
-				err := objs.Cmdlines.Lookup(&key, &value)
+				cmdLine, err := LookupCmdline(key)
 				if err != nil {
 					fmt.Printf("Failed to read command line for PID %d: %v\n", key, err)
 				} else {
-					cmdLine := strings.TrimRight(string(value[:]), "\x00")
 					fmt.Printf("PID %d command line: %s\n", key, cmdLine)
 				}
 

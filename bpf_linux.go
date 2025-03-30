@@ -101,3 +101,13 @@ func InitBPF() (PerfReader, func(), error) {
 
 	return &perfReaderWrapper{reader}, cleanup, nil
 }
+
+// Add a function to lookup values from the cmdlines map
+func LookupCmdline(pid uint32) (string, error) {
+	var value [512]byte
+	err := Objs.Cmdlines.Lookup(&pid, &value)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(string(value[:]), "\x00"), nil
+}
