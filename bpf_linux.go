@@ -12,6 +12,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/perf"
@@ -58,14 +59,15 @@ func InitBPF() (PerfReader, func(), error) {
 		return nil, nil, fmt.Errorf("failed to load BPF objects: %v", err)
 	}
 
-	cmdlinesMapFD = objs.Cmdlines.FD()
-
 	// Create perf reader
 	reader, err := perf.NewReader(objs.Events, os.Getpagesize()*8)
 	if err != nil {
 		objs.Close()
 		return nil, nil, fmt.Errorf("failed to create perf reader: %v", err)
 	}
+
+	// Get the cmdlines map FD
+	cmdlinesMapFD = objs.Cmdlines.FD()
 
 	var cleanupFuncs []func()
 	cleanupFuncs = append(cleanupFuncs, func() {
@@ -105,7 +107,7 @@ func InitBPF() (PerfReader, func(), error) {
 // Add a function to lookup values from the cmdlines map
 func LookupCmdline(pid uint32) (string, error) {
 	var value [512]byte
-	err := Objs.Cmdlines.Lookup(&pid, &value)
+	err := objs.Cmdlines.Lookup(&pid, &value)
 	if err != nil {
 		return "", err
 	}

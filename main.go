@@ -174,7 +174,7 @@ func startBPFReader(reader PerfReader, eventChan chan Event) {
 
 		if event.EventType == EventExec {
 			// Try to read command line from map
-			if CmdlinesMapFD != 0 {
+			if cmdlinesMapFD != 0 {
 				key := event.PID
 
 				// Lookup the command line from the map
