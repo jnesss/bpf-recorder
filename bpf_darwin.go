@@ -11,7 +11,7 @@ import "fmt"
 
 // Global variables to match Linux implementation
 var (
-	CmdlinesMapFD int // Will be 0 on macOS since BPF isn't supported
+	cmdlinesMapFD int // Will be 0 on macOS since BPF isn't supported
 )
 
 // InitBPF provides a stub implementation for MacOS.
