@@ -19,7 +19,7 @@ struct bpf_map_def SEC("maps") events = {
 struct bpf_map_def SEC("maps") cmdlines = {
     .type = BPF_MAP_TYPE_HASH,
     .key_size = sizeof(u32),
-    .value_size = 512,  // Command line buffer size
+    .value_size = 256,  // Command line buffer size
     .max_entries = 1024,
     .map_flags = 0,
 };
@@ -28,7 +28,7 @@ struct bpf_map_def SEC("maps") cmdlines = {
 struct bpf_map_def SEC("maps") cmdline_buffer = {
     .type = BPF_MAP_TYPE_PERCPU_ARRAY,
     .key_size = sizeof(u32),
-    .value_size = 512,
+    .value_size = 256,
     .max_entries = 1,
     .map_flags = 0,
 };
@@ -76,66 +76,59 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     char *buffer = bpf_map_lookup_elem(&cmdline_buffer, &zero);
     if (!buffer)
         return 0;  // Can't proceed without buffer
-    
-    // Initialize buffer to zeros
-    __builtin_memset(buffer, 0, 512);
 
-    // Get the arguments array
-    const char **args = (const char **)(ctx->args[1]);
-
-    // Track our position in the buffer
-    int offset = 0;
-
-    // Handle each argument separately with fixed positions
-    // Arg 0
+    // Get filename and first argument (usually the program name)
     const char *arg0 = NULL;
     bpf_probe_read(&arg0, sizeof(arg0), &args[0]);
+
+    // Initialize buffer to zeros
+    __builtin_memset(buffer, 0, 256);
+
+    // We'll take a very conservative approach with fixed buffers
+    // Capture just the first three arguments with fixed sizes
     if (arg0) {
-        int bytes = bpf_probe_read_str(&buffer[0], 64, arg0);
-        if (bytes > 0) {
-            offset = bytes - 1; // Account for null terminator
+        // First argument - copy up to 100 bytes
+        bpf_probe_read_str(buffer, 100, arg0);
+    }
+
+    // Try to add second argument
+    const char *arg1 = NULL;
+    bpf_probe_read(&arg1, sizeof(arg1), &args[1]);
+    if (arg1) {
+        // Find end of current string
+        int i = 0;
+        for (i = 0; i < 99; i++) {
+            if (buffer[i] == 0)
+                break;
+        }
+    
+        // Add space and second argument if we have room
+        if (i < 99) {
+            buffer[i] = ' ';
+            bpf_probe_read_str(&buffer[i+1], 100, arg1);
         }
     }
 
-    // Process 10 more arguments with fixed offsets
-    #define PROCESS_ARG(n, max_len) \
-        if (offset < 500) { \
-            const char *arg ## n = NULL; \
-            bpf_probe_read(&arg ## n, sizeof(arg ## n), &args[n]); \
-            if (arg ## n) { \
-                buffer[offset] = ' '; \
-                offset++; \
-                int bytes = bpf_probe_read_str(&buffer[offset], max_len, arg ## n); \
-                if (bytes > 0) { \
-                    offset += (bytes - 1); \
-                } \
-            } \
+    // Try to add third argument
+    const char *arg2 = NULL;
+    bpf_probe_read(&arg2, sizeof(arg2), &args[2]);
+    if (arg2) {
+        // Find end of current string
+        int i = 0;
+        for (i = 0; i < 199; i++) {
+            if (buffer[i] == 0)
+                break;
         }
+    
+        // Add space and third argument if we have room
+        if (i < 199) {
+            buffer[i] = ' ';
+            bpf_probe_read_str(&buffer[i+1], 50, arg2);
+        }
+    }
 
-    // Process args 1-19 with fixed sizes 
-    //  we are using this roundabout macro approachto satisfy BPF verifier
-    PROCESS_ARG(1, 48)
-    PROCESS_ARG(2, 48)
-    PROCESS_ARG(3, 48)
-    PROCESS_ARG(4, 48)
-    PROCESS_ARG(5, 48)
-    PROCESS_ARG(6, 32)
-    PROCESS_ARG(7, 32)
-    PROCESS_ARG(8, 32)
-    PROCESS_ARG(9, 32)
-    PROCESS_ARG(10, 24)
-    PROCESS_ARG(11, 16)
-    PROCESS_ARG(12, 16)
-    PROCESS_ARG(13, 16)
-    PROCESS_ARG(14, 12)
-    PROCESS_ARG(15, 12)
-    PROCESS_ARG(16, 8)
-    PROCESS_ARG(17, 8)
-    PROCESS_ARG(18, 8)
-    PROCESS_ARG(19, 8)
-
-    // Ensure null termination
-    buffer[511] = '\0';
+    // Make sure it's null-terminated
+    buffer[255] = '\0';
 
     // Update the cmdlines map with the buffer
     bpf_map_update_elem(&cmdlines, &pid, buffer, BPF_ANY);
