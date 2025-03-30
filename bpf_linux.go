@@ -105,6 +105,7 @@ func InitBPF() (PerfReader, func(), error) {
 }
 
 // LookupCmdline retrieves the command line for a process
+// LookupCmdline retrieves the command line for a process
 func LookupCmdline(pid uint32) (string, error) {
 	// Make sure we have a valid map
 	if objs.Cmdlines == nil {
@@ -112,7 +113,7 @@ func LookupCmdline(pid uint32) (string, error) {
 	}
 
 	// Create buffer for reading from map
-	var value [1024]byte // Increased to match BPF code
+	var value [1024]byte
 
 	// Lookup the value
 	err := objs.Cmdlines.Lookup(&pid, &value)
@@ -120,7 +121,11 @@ func LookupCmdline(pid uint32) (string, error) {
 		return "", fmt.Errorf("map lookup error: %v", err)
 	}
 
-	// Convert to string and trim nulls
-	cmdLine := strings.TrimRight(string(value[:]), "\x00")
-	return cmdLine, nil
+	// Convert to string and only keep up to the first null byte
+	rawCmdLine := string(value[:])
+	if idx := strings.Index(rawCmdLine, "\x00"); idx >= 0 {
+		rawCmdLine = rawCmdLine[:idx]
+	}
+
+	return rawCmdLine, nil
 }
