@@ -91,7 +91,7 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     const char *arg0 = NULL;
     bpf_probe_read(&arg0, sizeof(arg0), &args[0]);
     if (arg0) {
-        int bytes = bpf_probe_read_str(buffer, 64, arg0);
+        int bytes = bpf_probe_read_str(&buffer[0], 64, arg0);
         if (bytes > 0) {
             offset = bytes - 1; // Account for null terminator
         }
@@ -103,8 +103,9 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             const char *arg ## n = NULL; \
             bpf_probe_read(&arg ## n, sizeof(arg ## n), &args[n]); \
             if (arg ## n) { \
-                buffer[offset++] = ' '; \
-                int bytes = bpf_probe_read_str(buffer + offset, max_len, arg ## n); \
+                buffer[offset] = ' '; \
+                offset++; \
+                int bytes = bpf_probe_read_str(&buffer[offset], max_len, arg ## n); \
                 if (bytes > 0) { \
                     offset += (bytes - 1); \
                 } \
