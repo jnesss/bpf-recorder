@@ -84,6 +84,8 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     __builtin_memset(buffer, 0, 1024);
     
     // Fixed buffer regions for each argument with doubled sizes
+    // I know this is ugly
+    // Its the most reliable way I have found to comply with BPF verifier rules
     // Argument allocation:
     // arg0: 0-191   (192 bytes)
     // arg1: 192-351 (160 bytes)
@@ -98,11 +100,11 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     const char *arg0 = NULL;
     bpf_probe_read(&arg0, sizeof(arg0), &args[0]);
     if (arg0) {
-        // Clear the region first (for additional safety)
-        __builtin_memset(buffer, 0, 192);
+        // Read string with a length limit
         bpf_probe_read_str(buffer, 192, arg0);
+        buffer[191] = '\0';
     }
-    
+
     // Arg 1 - starts at offset 192, max 160 bytes
     const char *arg1 = NULL;
     bpf_probe_read(&arg1, sizeof(arg1), &args[1]);
@@ -111,9 +113,11 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
         if (buffer[0] != 0) {
             buffer[191] = ' ';
         }
+        // Read string with a length limit
         bpf_probe_read_str(buffer + 192, 160, arg1);
+        buffer[351] = '\0';
     }
-    
+
     // Arg 2 - starts at offset 352, max 160 bytes
     const char *arg2 = NULL;
     bpf_probe_read(&arg2, sizeof(arg2), &args[2]);
@@ -122,9 +126,11 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
         if (buffer[192] != 0) {
             buffer[351] = ' ';
         }
+        // Read string with a length limit
         bpf_probe_read_str(buffer + 352, 160, arg2);
+        buffer[511] = '\0';
     }
-    
+
     // Arg 3 - starts at offset 512, max 128 bytes
     const char *arg3 = NULL;
     bpf_probe_read(&arg3, sizeof(arg3), &args[3]);
@@ -133,8 +139,9 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[511] = ' ';
         }
         bpf_probe_read_str(buffer + 512, 128, arg3);
+        buffer[639] = '\0';
     }
-    
+
     // Arg 4 - starts at offset 640, max 128 bytes
     const char *arg4 = NULL;
     bpf_probe_read(&arg4, sizeof(arg4), &args[4]);
@@ -143,8 +150,9 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[639] = ' ';
         }
         bpf_probe_read_str(buffer + 640, 128, arg4);
+        buffer[767] = '\0';
     }
-    
+
     // Arg 5 - starts at offset 768, max 96 bytes
     const char *arg5 = NULL;
     bpf_probe_read(&arg5, sizeof(arg5), &args[5]);
@@ -153,8 +161,9 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[767] = ' ';
         }
         bpf_probe_read_str(buffer + 768, 96, arg5);
+        buffer[863] = '\0';
     }
-    
+
     // Arg 6 - starts at offset 864, max 96 bytes
     const char *arg6 = NULL;
     bpf_probe_read(&arg6, sizeof(arg6), &args[6]);
@@ -163,8 +172,9 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[863] = ' ';
         }
         bpf_probe_read_str(buffer + 864, 96, arg6);
+        buffer[959] = '\0';
     }
-    
+
     // Arg 7 - starts at offset 960, max 64 bytes
     const char *arg7 = NULL;
     bpf_probe_read(&arg7, sizeof(arg7), &args[7]);
@@ -173,9 +183,10 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
             buffer[959] = ' ';
         }
         bpf_probe_read_str(buffer + 960, 64, arg7);
+        buffer[1023] = '\0';
     }
-    
-    // Make sure it's null-terminated
+
+    // Final safety check - ensure the very end is null-terminated
     buffer[1023] = '\0';
     
     // Update the cmdlines map with the buffer
