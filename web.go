@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -159,32 +160,50 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 	var pidList []uint32
 	currentPid := pid
 
-	// First, build a list of PIDs we need to fetch (the process and all its ancestors)
-	for currentPid > 0 {
-		// Add the current PID to our list
-		pidList = append(pidList, currentPid)
-		fmt.Printf("Added PID %d to list\n", currentPid)
+	// Add the current PID to our list
+	pidList = append(pidList, currentPid)
 
+	// First, build a list of PIDs we need to fetch (the process and all its ancestors)
+	tempPid := currentPid
+	for tempPid > 0 {
 		// Find the parent PID
 		var ppid uint32
-		err := db.db.QueryRow("SELECT ppid FROM processes WHERE pid = ? ORDER BY timestamp DESC LIMIT 1", currentPid).Scan(&ppid)
+		err := db.db.QueryRow("SELECT ppid FROM processes WHERE pid = ? ORDER BY timestamp DESC LIMIT 1", tempPid).Scan(&ppid)
 		if err != nil {
 			if err == sql.ErrNoRows {
-				fmt.Printf("No rows found for PID %d\n", currentPid)
 				// No more ancestors found, break the loop
 				break
 			}
 			return nil, err
 		}
 
-		fmt.Printf("Found parent PID %d for PID %d\n", ppid, currentPid)
+		// Add the parent PID to our list
+		if ppid > 0 {
+			pidList = append(pidList, ppid)
+		}
+
 		// Move up to the parent for the next iteration
-		currentPid = ppid
+		tempPid = ppid
 
 		// Safety check to prevent infinite loops
 		if len(pidList) > 100 {
 			break
 		}
+	}
+
+	// Next, add child processes
+	rows, err := db.db.Query("SELECT DISTINCT pid FROM processes WHERE ppid = ? ORDER BY timestamp DESC", pid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var childPid uint32
+		if err := rows.Scan(&childPid); err != nil {
+			return nil, err
+		}
+		pidList = append(pidList, childPid)
 	}
 
 	fmt.Printf("PIDs to fetch: %v\n", pidList)
@@ -199,21 +218,14 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 			args = append(args, p)
 		}
 
-		query := `
+		query := fmt.Sprintf(`
             SELECT 
                 id, timestamp, pid, ppid, comm, cmdline, exe_path,
                 working_dir, username, parent_comm, environment, container_id
             FROM processes 
-            WHERE `
-
-		for i, p := range pidList {
-			if i > 0 {
-				query += " OR "
-			}
-			query += fmt.Sprintf("pid = %d", p)
-		}
-
-		query += " ORDER BY timestamp DESC"
+            WHERE pid IN (%s)
+            ORDER BY timestamp DESC
+        `, strings.Join(placeholders, ","))
 
 		rows, err := db.db.Query(query, args...)
 		if err != nil {
