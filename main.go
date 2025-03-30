@@ -189,7 +189,7 @@ func startBPFReader(reader PerfReader, eventChan chan Event) {
 
 				// In a real implementation, you'd use bpf.LookupElement to read from the map
 				// For now, just use the filename as a placeholder
-				fmt.Printf("Executable: %s\n", strings.TrimRight(string(event.Filename[:]), "\x00"))
+				fmt.Printf("PID %d executable: %s\n", key, strings.TrimRight(string(event.Filename[:]), "\x00"))
 			}
 		}
 
