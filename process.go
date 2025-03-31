@@ -4,33 +4,35 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/user"
-	"strconv"
+	"path/filepath"
 	"strings"
 	"sync"
 )
 
 // ProcessInfo holds detailed information about a process
 type ProcessInfo struct {
-	PID         uint32
-	PPID        uint32
-	Comm        string
-	CmdLine     []string
-	ExePath     string
-	UID         uint32
-	Username    string
-	ParentComm  string
-	WorkingDir  string
-	Environment []string
-	ContainerID string // Container ID if process is containerized
+	PID           uint32
+	PPID          uint32
+	Comm          string
+	CmdLine       []string
+	ExePath       string
+	UID           uint32
+	Username      string
+	ParentComm    string
+	ParentExePath string
+	WorkingDir    string
+	Environment   []string
+	ContainerID   string // Container ID if process is containerized
 }
 
 // GetProcessInfo gathers detailed information about a process from /proc
-func GetProcessInfo(pid uint32) (*ProcessInfo, error) {
+func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 	info := &ProcessInfo{
-		PID: pid,
+		PID:  pid,
+		PPID: ppid,
 	}
 
+	/* we already get pid, ppid, uid, gid from kernel structure
 	// Get process status info (includes PPID, UID)
 	status, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
 	if err == nil {
@@ -53,6 +55,13 @@ func GetProcessInfo(pid uint32) (*ProcessInfo, error) {
 			}
 		}
 	}
+	*/
+
+	// Get process name
+	if exepath, err := os.Readlink(fmt.Sprintf("/proc/%d/comm", pid)); err == nil {
+		info.ExePath = exepath
+		info.Comm = filepath.Base(exepath)
+	}
 
 	// Get command line
 	if cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil {
@@ -62,25 +71,16 @@ func GetProcessInfo(pid uint32) (*ProcessInfo, error) {
 		}
 	}
 
-	// Get executable path
-	if exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid)); err == nil {
-		info.ExePath = exe
-	}
-
 	// Get working directory
 	if cwd, err := os.Readlink(fmt.Sprintf("/proc/%d/cwd", pid)); err == nil {
 		info.WorkingDir = cwd
 	}
 
-	// Get environment
-	if env, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/environ", pid)); err == nil {
-		info.Environment = strings.Split(string(env), "\x00")
-	}
-
-	// Get parent process name if possible
+	// Get parent process name and path if possible
 	if info.PPID > 0 {
-		if comm, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/comm", info.PPID)); err == nil {
-			info.ParentComm = strings.TrimSpace(string(comm))
+		if parentexepath, err := os.Readlink(fmt.Sprintf("/proc/%d/comm", ppid)); err == nil {
+			info.ParentExePath = parentexepath
+			info.ParentComm = filepath.Base(parentexepath)
 		}
 	}
 
@@ -106,6 +106,11 @@ func GetProcessInfo(pid uint32) (*ProcessInfo, error) {
 		}
 	}
 
+	// Get environment
+	if env, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/environ", pid)); err == nil {
+		info.Environment = strings.Split(string(env), "\x00")
+	}
+
 	return info, nil
 }
 
@@ -128,14 +133,15 @@ func NewMetadataCollector() *MetadataCollector {
 }
 
 // CollectProcessInfo asynchronously collects process information
-func (mc *MetadataCollector) CollectProcessInfo(pid uint32) <-chan *ProcessInfo {
+func (mc *MetadataCollector) CollectProcessInfo(pid uint32, ppid uint32) <-chan *ProcessInfo {
 	done := make(chan *ProcessInfo, 1) // Buffer of 1 for this specific process
 
 	go func() {
-		info, err := GetProcessInfo(pid)
+		info, err := GetProcessInfo(pid, ppid)
 		if err != nil {
 			info = &ProcessInfo{
 				PID:  pid,
+				PPID: ppid,
 				Comm: fmt.Sprintf("unknown-%d", pid),
 			}
 		}
