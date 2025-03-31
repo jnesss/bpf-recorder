@@ -29,9 +29,10 @@ type ProcessRow struct {
 	ParentComm  string    `json:"parentComm"`
 	Environment string    `json:"environment"`
 	ContainerID string    `json:"containerId"`
+	BinaryMD5   string    `json:"binaryMd5"`
 }
 
-func startWebServer(db *DB, sigmaDetector *SigmaDetector) error {
+func startWebServer(db *DB, sigmaDetector *SigmaDetector, binaryCache *BinaryCache) error {
 	// Debug handler that wraps other handlers and logs request details
 	debugHandler := func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +45,7 @@ func startWebServer(db *DB, sigmaDetector *SigmaDetector) error {
 	http.HandleFunc("/", debugHandler(handleIndex))
 	http.HandleFunc("/app.jsx", debugHandler(handleAppJSX))
 	http.HandleFunc("/api/processes", debugHandler(handleProcesses(db)))
+	http.HandleFunc("/api/binaries", debugHandler(handleBinaries(binaryCache)))
 
 	// Add these to your startWebServer function
 	if sigmaDetector != nil {
@@ -160,7 +162,8 @@ func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam s
 	query := `
         SELECT 
             id, timestamp, pid, ppid, comm, cmdline, exe_path,
-            working_dir, username, parent_comm, environment, container_id
+            working_dir, username, parent_comm, environment, container_id,
+            binary_md5
         FROM processes 
         WHERE id BETWEEN ? AND ?
         ORDER BY id DESC
@@ -188,6 +191,7 @@ func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam s
 			&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
 			&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
 			&p.ParentComm, &p.Environment, &p.ContainerID,
+			&p.BinaryMD5,
 		)
 		if err != nil {
 			fmt.Printf("Error scanning row: %v\n", err)
@@ -211,7 +215,8 @@ func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam s
 		query = `
             SELECT 
                 id, timestamp, pid, ppid, comm, cmdline, exe_path,
-                working_dir, username, parent_comm, environment, container_id
+                working_dir, username, parent_comm, environment, container_id,
+                binary_md5
             FROM processes 
             WHERE id = ?
         `
@@ -221,6 +226,7 @@ func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam s
 			&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
 			&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
 			&p.ParentComm, &p.Environment, &p.ContainerID,
+			&p.BinaryMD5,
 		)
 
 		if err == nil {
@@ -246,7 +252,8 @@ func handleRecentProcesses(w http.ResponseWriter, r *http.Request, db *DB) {
 	rows, err := db.db.Query(`
 		SELECT 
 			id, timestamp, pid, ppid, comm, cmdline, exe_path,
-			working_dir, username, parent_comm, environment, container_id
+			working_dir, username, parent_comm, environment, container_id,
+            binary_md5
 		FROM processes 
 		ORDER BY timestamp DESC 
 		LIMIT 100
@@ -265,6 +272,7 @@ func handleRecentProcesses(w http.ResponseWriter, r *http.Request, db *DB) {
 			&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
 			&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
 			&p.ParentComm, &p.Environment, &p.ContainerID,
+			&p.BinaryMD5,
 		)
 		if err != nil {
 			fmt.Printf("Error scanning row: %v\n", err)
@@ -277,6 +285,30 @@ func handleRecentProcesses(w http.ResponseWriter, r *http.Request, db *DB) {
 	fmt.Printf("Returning %d processes\n", len(processes))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(processes)
+}
+
+func handleBinaries(binaryCache *BinaryCache) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract hash from query parameter
+		hash := r.URL.Query().Get("md5")
+
+		if hash == "" {
+			http.Error(w, "Missing md5 parameter", 400)
+			return
+		}
+
+		// Check if binary exists
+		binPath := binaryCache.GetBinaryPath(hash)
+		if _, err := os.Stat(binPath); os.IsNotExist(err) {
+			http.Error(w, "Binary not found", 404)
+			return
+		}
+
+		// Serve the binary file
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.bin", hash))
+		w.Header().Set("Content-Type", "application/octet-stream")
+		http.ServeFile(w, r, binPath)
+	}
 }
 
 // handleSigmaRules handles GET requests for listing all Sigma rules
@@ -784,7 +816,8 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 		query := fmt.Sprintf(`
 			SELECT 
 				id, timestamp, pid, ppid, comm, cmdline, exe_path,
-				working_dir, username, parent_comm, environment, container_id
+				working_dir, username, parent_comm, environment, container_id,
+                binary_md5
 			FROM processes 
 			WHERE pid IN (%s)
 			ORDER BY timestamp DESC
@@ -804,6 +837,7 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 				&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
 				&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
 				&p.ParentComm, &p.Environment, &p.ContainerID,
+				&p.BinaryMD5,
 			)
 			if err != nil {
 				return nil, err
