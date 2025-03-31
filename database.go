@@ -30,6 +30,7 @@ type ProcessRecord struct {
 	ContainerID string // Added container support
 	UID         string // User ID
 	GID         string // Group ID
+	BinaryMD5   string // MD5 hash of the binary
 }
 
 func NewDB(dataDir string) (*DB, error) {
@@ -86,7 +87,8 @@ func initProcessSchema(db *sql.DB) error {
 		environment  TEXT,
         container_id TEXT,
         uid          TEXT,
-        gid          TEXT
+        gid          TEXT,
+        binary_md5   TEXT
 	);`
 
 	if _, err := db.Exec(schema); err != nil {
@@ -163,8 +165,8 @@ func (db *DB) InsertProcess(record *ProcessRecord) error {
 		INSERT INTO processes (
 			timestamp, pid, ppid, comm, cmdline, exe_path,
 			working_dir, username, parent_comm, environment,
-			container_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			container_id, uid, gid, binary_md5
+    	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := db.db.Exec(query,
 		record.Timestamp,
@@ -178,6 +180,9 @@ func (db *DB) InsertProcess(record *ProcessRecord) error {
 		record.ParentComm,
 		record.Environment,
 		record.ContainerID,
+		record.UID,
+		record.GID,
+		record.BinaryMD5,
 	)
 	if err != nil {
 		return err
