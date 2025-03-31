@@ -53,8 +53,14 @@ func NewDB(dataDir string) (*DB, error) {
 		return nil, fmt.Errorf("failed to enable WAL mode: %v", err)
 	}
 
-	fmt.Println("Initializing schema...")
-	if err := initSchema(db); err != nil {
+	fmt.Println("Initializing process schema...")
+	if err := initProcessSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to initialize schema: %v", err)
+	}
+
+	fmt.Println("Initializing Sigma detector state schema...")
+	if err := initSigmaSchema(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to initialize schema: %v", err)
 	}
@@ -63,7 +69,7 @@ func NewDB(dataDir string) (*DB, error) {
 	return &DB{db: db}, nil
 }
 
-func initSchema(db *sql.DB) error {
+func initProcessSchema(db *sql.DB) error {
 	fmt.Println("Creating processes table if it doesn't exist...")
 	schema := `
 	CREATE TABLE IF NOT EXISTS processes (
@@ -99,6 +105,53 @@ func initSchema(db *sql.DB) error {
 		if _, err := db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %v", err)
 		}
+	}
+
+	return nil
+}
+
+// initSigmaSchema creates the database tables needed for Sigma detection
+func initSigmaSchema(db *sql.DB) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS detector_state (
+		id INTEGER PRIMARY KEY,
+		event_type TEXT NOT NULL,
+		last_id INTEGER NOT NULL,
+		last_processed_time DATETIME NOT NULL,
+		rule_count INTEGER DEFAULT 0,
+		match_count INTEGER DEFAULT 0,
+		updated_at DATETIME NOT NULL,
+		UNIQUE(event_type)
+	);
+	
+	CREATE TABLE IF NOT EXISTS sigma_matches (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		event_id INTEGER NOT NULL,
+		event_type TEXT NOT NULL,
+		rule_id TEXT NOT NULL,
+		rule_name TEXT NOT NULL,
+		process_id INTEGER,
+		process_name TEXT,
+		command_line TEXT,
+		parent_process_name TEXT,
+		parent_command_line TEXT,
+		username TEXT,
+		timestamp DATETIME NOT NULL,
+		severity TEXT NOT NULL,
+		status TEXT DEFAULT 'new' NOT NULL,
+		match_details TEXT,
+		event_data TEXT,
+		created_at DATETIME NOT NULL
+	);
+	
+	CREATE INDEX IF NOT EXISTS idx_sigma_matches_rule_id ON sigma_matches(rule_id);
+	CREATE INDEX IF NOT EXISTS idx_sigma_matches_timestamp ON sigma_matches(timestamp);
+	CREATE INDEX IF NOT EXISTS idx_sigma_matches_status ON sigma_matches(status);
+	CREATE INDEX IF NOT EXISTS idx_sigma_matches_event_id ON sigma_matches(event_id);`
+
+	_, err := db.Exec(schema)
+	if err != nil {
+		return fmt.Errorf("failed to create Sigma tables: %v", err)
 	}
 
 	return nil
