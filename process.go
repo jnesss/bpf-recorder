@@ -43,8 +43,9 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 	}
 
 	// Get command line
-	if cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil {
-		info.CmdLine = string(cmdline)
+	cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		info.CmdLine = strings.ReplaceAll(string(cmdline), string([]byte{0}), " ")
 		fmt.Printf("%v: Procinfo cmdline is [%v]\n", pid, info.CmdLine)
 	}
 
@@ -102,8 +103,9 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 	}
 
 	// try to get cmdline a second time
-	if cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil {
-		info.CmdLine = string(cmdline)
+	cmdline, err = ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
+	if err != nil {
+		info.CmdLine = strings.ReplaceAll(string(cmdline), string([]byte{0}), " ")
 		fmt.Printf("%v: Procinfo second attempt cmdline is [%v]\n", pid, info.CmdLine)
 	} else {
 		fmt.Printf("couldn't look up cmdline a second time (that's fine) err %v\n", err)
