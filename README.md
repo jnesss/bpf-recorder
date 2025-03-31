@@ -1,10 +1,12 @@
 # BPF Recorder
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Platform](https://img.shields.io/badge/platform-Linux%20|%20MacOS(UI%20Only)-lightgrey.svg)
-![Language](https://img.shields.io/badge/language-Go-teal.svg)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/jnesss/bpf-recorder/blob/main/LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Linux%20|%20MacOS(UI%20Only)-lightgrey.svg)](https://github.com/jnesss/bpf-recorder)
+[![Language](https://img.shields.io/badge/language-Go-teal.svg)](https://github.com/jnesss/bpf-recorder)
 
 A high-performance, low-overhead system for monitoring and analyzing process execution events in real-time using eBPF technology. BPF Recorder provides detailed telemetry for security monitoring, forensics, and system behavior analysis.
+
+![BPF Recorder - Process Monitoring](https://github.com/jnesss/bpf-recorder/raw/main/docs/screenshots/process_list.png)
 
 ## Overview
 
@@ -127,6 +129,23 @@ The web interface is available at `http://localhost:8080` and provides:
 - Rule management interface
 - Alert dashboard
 
+### Dashboard Screenshots
+
+#### Process Monitoring
+![Process Monitoring](https://github.com/jnesss/bpf-recorder/raw/main/docs/screenshots/process_list.png)
+
+*Comprehensive view of system processes with detailed information and hierarchical display*
+
+#### Sigma Rule Management
+![Rule Management](https://github.com/jnesss/bpf-recorder/raw/main/docs/screenshots/rule_management.png)
+
+*Create, upload, and manage detection rules with an intuitive interface*
+
+#### Alert Investigation
+![Alert Investigation](https://github.com/jnesss/bpf-recorder/raw/main/docs/screenshots/alert_investigation.png)
+
+*Detailed view of security alerts with full context for investigation*
+
 ## Sigma Rules Integration
 
 BPF Recorder supports [Sigma rules](https://github.com/SigmaHQ/sigma) for threat detection. Rules can be:
@@ -137,6 +156,50 @@ BPF Recorder supports [Sigma rules](https://github.com/SigmaHQ/sigma) for threat
 - Customized for your environment
 
 The system will automatically detect new rules and notify you of matches in real-time.
+
+## API Integration
+
+BPF Recorder provides a REST API for integration with other security tools and automation systems:
+
+```bash
+
+# Get list of processes
+% curl -s http://localhost:8080/api/processes | json_pp
+[
+   {
+      "binaryMd5" : "fd24428139a55ce2bb97e3d42938d530",
+      "cmdline" : "whoami 8U",
+      "comm" : "whoami",
+      "containerId" : "",
+      "environment" : "[\"USER=ec2-user\",\"LOGNAME=ec2-user\",\"HOME=/home/ec2-user\",\"PATH=/usr/local/bin:/usr/bin:/usr/local/sbin:/usr/sbin\",\"SHELL=/bin/bash\",\"TERM=xterm-256color\",\"SELINUX_ROLE_REQUESTED=\",\"SELINUX_LEVEL_REQUESTED=\",\"SELINUX_USE_CURRENT_RANGE=\",\"MOTD_SHOWN=pam\",\"XDG_SESSION_ID=108\",\"XDG_RUNTIME_DIR=/run/user/1000\",\"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus\",\"XDG_SESSION_TYPE=tty\",\"XDG_SESSION_CLASS=user\",\"SSH_CLIENT=50.54.128.65 56980 22\",\"SSH_CONNECTION=50.54.128.65 56980 172.31.44.65 22\",\"SSH_TTY=/dev/pts/0\",\"\"]",
+      "exePath" : "/usr/bin/whoami",
+      "id" : 210,
+      "parentComm" : "bash",
+      "pid" : 2392513,
+      "ppid" : 2392367,
+      "timestamp" : "1970-05-12T02:41:22.648770944Z",
+      "username" : "ec2-user",
+      "workingDir" : "/home/ec2-user"
+   },
+   {
+      "binaryMd5" : "acd31cb8988ae0b2d6822f81fb449795",
+      "cmdline" : "rm /run/systemd/network/70-ens5.network.d/ec2net_alias.conf.new UHHHtjTH]aTGt6HH c",
+      "comm" : "setup-policy-ro",
+      "containerId" : "",
+      "environment" : "null",
+      "exePath" : "/usr/bin/rm",
+      "id" : 209,
+      "parentComm" : "setup-policy-ro",
+      "pid" : 2392510,
+      "ppid" : 2392493,
+      "timestamp" : "1970-05-12T02:41:13.477768254Z",
+      "username" : "",
+      "workingDir" : "/"
+   }
+]
+```
+
+The full API documentation is available in the [API.md](docs/API.md) file.
 
 ## Development
 
