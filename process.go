@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 // ProcessInfo holds detailed information about a process
@@ -87,6 +88,9 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 	}
 
 	// Retry process name in hopes that process fork and startup is done
+	// introducing 2ms sleep to let fork complete
+	time.Sleep(2 * time.Millisecond)
+
 	if exepath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid)); err == nil {
 		fmt.Printf("%v: Second Procinfo comm is [%v]\n", pid, exepath)
 		info.ExePath = exepath
