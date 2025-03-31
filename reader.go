@@ -24,6 +24,7 @@ type Event struct {
 	GID       uint32
 	EventType int32
 	ExitCode  int32
+	Flags     uint32
 
 	// Variable-length fields
 	Comm       [16]byte

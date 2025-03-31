@@ -30,6 +30,7 @@ struct event {
     gid_t gid;       // 4 bytes
     int event_type;  // 4 bytes
     int exit_code;   // 4 bytes
+    u32 flags;       // 4 bytes
     
     // Variable-length fields
     char comm[16];           // Process name
