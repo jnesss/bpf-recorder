@@ -23,11 +23,6 @@ func NewBinaryCache(size int, binsDir string) (*BinaryCache, error) {
 		return nil, err
 	}
 
-	// Drop privileges before doing anything with the bins dir
-	if err := dropPrivileges(); err != nil {
-		return nil, fmt.Errorf("failed to drop privileges: %v", err)
-	}
-
 	// Create bins directory if it doesn't exist
 	if err := os.MkdirAll(binsDir, 0755); err != nil {
 		return nil, err
@@ -64,11 +59,6 @@ func (c *BinaryCache) StoreBinary(sourcePath, hash string) error {
 		return err
 	}
 	defer sourceFile.Close()
-
-	// Drop privileges before doing anything with the bins dir
-	if err := dropPrivileges(); err != nil {
-		return fmt.Errorf("failed to drop privileges: %v", err)
-	}
 
 	// Create directory if needed
 	prefix := hash[:2]
