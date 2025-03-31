@@ -34,6 +34,7 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 
 	// Get process name
 	if exepath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid)); err == nil {
+		fmt.Printf("%v: Procinfo comm is [%v]\n", pid, exepath)
 		info.ExePath = exepath
 		info.Comm = filepath.Base(exepath)
 	} else {

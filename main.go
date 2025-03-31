@@ -144,6 +144,14 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 
 	// Use usermode process name from /proc if we have it, otherwise kernel-mode
 	var comm string
+
+	fmt.Printf("Evaluating %v\n", evt.PID)
+	if len(bytes.TrimRight(evt.Comm[:], "\x00")) > 0 {
+		kmcomm := string(bytes.TrimRight(evt.Comm[:], "\x00"))
+		fmt.Printf("KM Comm [%v]\n", kmcomm)
+	}
+	fmt.Printf("UM Comm [%v]\n", procinfo.Comm)
+
 	if len(procinfo.Comm) > 0 {
 		comm = procinfo.Comm
 	} else {
