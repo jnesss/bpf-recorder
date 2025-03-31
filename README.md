@@ -1,70 +1,174 @@
 # BPF Recorder
 
-A lightweight process monitoring system using eBPF to track process creation and termination events on Linux systems.
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Linux%20|%20MacOS(UI%20Only)-lightgrey.svg)
+![Language](https://img.shields.io/badge/language-Go-teal.svg)
+
+A high-performance, low-overhead system for monitoring and analyzing process execution events in real-time using eBPF technology. BPF Recorder provides detailed telemetry for security monitoring, forensics, and system behavior analysis.
 
 ## Overview
 
-BPF Recorder uses eBPF to monitor process lifecycle events (creation and termination) on Linux systems. It provides detailed information about each process, including:
-- Process ID and Parent Process ID
-- Command name and arguments
-- Process tree showing the chain of parent processes
-- Exit codes for terminated processes
+BPF Recorder uses extended Berkeley Packet Filter (eBPF) technology to capture process lifecycle events directly from the Linux kernel with minimal performance impact. It offers:
 
-## Project Structure
+- **Process Lifecycle Monitoring**: Captures process creation and termination events with complete metadata
+- **Command Line Tracking**: Records full command lines with arguments 
+- **Binary Preservation**: Automatically caches executable binaries for later forensic analysis
+- **Real-time Detection**: Integrates Sigma rules for immediate threat detection
+- **Container Awareness**: Identifies processes running inside containers
+- **Cross-platform UI**: Web interface works on both Linux and MacOS for analysis and rule management
 
-The project is designed to support development on both Linux and MacOS systems:
+## Key Features
+
+### 📊 Comprehensive Process Telemetry
+- Full process genealogy with parent-child relationships
+- Complete command line arguments and environment variables
+- Working directory and executable path information
+- User/group identity tracking
+- Container context identification
+
+### 🔍 Advanced Detection Capabilities
+- Built-in [Sigma](https://github.com/SigmaHQ/sigma) rule support
+- Real-time alerting based on process behavior
+- Interactive rule management with enable/disable functionality
+- User-friendly rule upload interface
+- Detailed match information for investigations
+
+### 🔒 Security-focused Architecture
+- Privilege separation for database operations
+- Binary preservation for forensic analysis
+- MD5 hashing of executables for integrity verification
+- Cross-platform design for development and deployment flexibility
+
+### 📱 Intuitive Web Interface
+- Real-time process monitoring dashboard
+- Interactive process tree visualization
+- Detailed process information display
+- Rule management console
+- Alert investigation tools
+
+## Architecture
+
+BPF Recorder is designed with a modular, secure architecture:
 
 ```
-.
-├── main.go              # Main application logic
-├── reader.go            # Platform-agnostic interfaces
-├── process.go           # Process monitoring logic
-├── bpf_linux.go        # Linux-specific eBPF implementation
-├── bpf_darwin.go       # MacOS build support (stub)
-├── execve.c            # eBPF program (C code)
-└── headers/            # eBPF header files
+┌───────────────────┐   ┌───────────────────┐   ┌───────────────────┐
+│                   │   │                   │   │                   │
+│   eBPF Monitoring │   │ Process Metadata  │   │  Binary Capture   │
+│      (Kernel)     │◄──┼─ Collection       │◄──┼─   & Storage      │
+│                   │   │  (User Space)     │   │                   │
+└─────────┬─────────┘   └─────────┬─────────┘   └─────────┬─────────┘
+          │                       │                       │
+          │                       │                       │
+          ▼                       ▼                       ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                                                                 │
+│                               SQLite                            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+                                  │
+                                  │
+                                  ▼
+┌───────────────────────┐   ┌────────────────────┐   ┌───────────────────┐
+│                       │   │                    │   │                   │
+│   Process Monitoring  │   │   Sigma Detection  │   │ Interactive       │
+│        Dashboard      │◄──┼─      Engine       │◄──┼─ Rule Management  │
+│                       │   │                    │   │                   │
+└───────────────────────┘   └────────────────────┘   └───────────────────┘
 ```
 
-### Development Architecture
+### Components:
+- **eBPF Monitoring**: Kernel-level hooks for efficient event capture
+- **Process Metadata Collection**: Enriches events with detailed process information
+- **Binary Capture & Storage**: Preserves executables for analysis with customizable retention
+- **Secure Database Layer**: SQLite with privilege separation
+- **Detection Engine**: Real-time Sigma rule matching
+- **Web Interface**: React-based dashboard for visualization and management
 
-- The core monitoring logic is platform-independent, using interfaces defined in `reader.go`
-- Platform-specific code is isolated using Go build tags
-- MacOS support is included to enable development and testing on non-Linux systems
-- The actual eBPF monitoring functionality only runs on Linux
+## Quick Start
 
-## Building
-
-### On Linux (Full Functionality)
-```bash
-go build
-```
-
-### On MacOS (Development Only)
-```bash
-CGO_ENABLED=1 go build -tags darwin
-```
-
-Note: The MacOS build will compile but will exit with an "eBPF not supported" message when run.
-
-## Usage
-
-```bash
-# Run with default settings
-./bpf-recorder
-
-# Use Ctrl+C to stop monitoring
-```
-
-## Requirements
-
-- Linux 5.4+ for running the monitor
+### Requirements
+- Linux 5.4+ for monitoring functionality (Web UI works on MacOS)
 - Go 1.18+
-- CGO enabled
 - Clang/LLVM (for eBPF compilation)
 
-## Development Notes
+### Installation
 
-- The project uses build tags to separate Linux and MacOS code
-- Platform-agnostic interfaces allow for future extensions
-- Error handling and logging are designed for production use
-- The architecture supports easy testing and mocking
+```bash
+# Clone the repository
+git clone https://github.com/jnesss/bpf-recorder.git
+cd bpf-recorder
+
+# Build the application
+make
+
+# Run with default settings (requires root/sudo for eBPF)
+sudo ./bpf-recorder
+```
+
+### Usage Options
+
+```bash
+Usage: bpf-recorder [options]
+
+Options:
+  -data string        Directory for storing data (default "./data")
+  -rules string       Directory for Sigma rules (default "./rules")
+  -bins string        Directory for binary storage (default "./bins")
+  -bin-cache-size int Size of in-memory binary cache (default 128)
+  -web-only           Run in web UI only mode without BPF monitoring
+```
+
+## Web Interface
+
+The web interface is available at `http://localhost:8080` and provides:
+
+- Real-time process monitoring
+- Interactive process tree visualization
+- Rule management interface
+- Alert dashboard
+
+## Sigma Rules Integration
+
+BPF Recorder supports [Sigma rules](https://github.com/SigmaHQ/sigma) for threat detection. Rules can be:
+
+- Uploaded through the web interface
+- Enabled/disabled through the UI
+- Automatically monitored for file changes
+- Customized for your environment
+
+The system will automatically detect new rules and notify you of matches in real-time.
+
+## Development
+
+### Cross-platform Development
+- The project is designed to allow development on MacOS (UI only) while production deployment on Linux
+- Platform-specific code is isolated using Go build tags
+- Testing can be performed on non-Linux systems
+
+### Building for Different Platforms
+
+**Linux (Full Functionality)**
+```bash
+make
+```
+
+**MacOS (UI Development Only)**
+```bash
+make build
+```
+
+## Security Considerations
+
+BPF Recorder is designed with security in mind:
+- Privilege separation for database operations
+- Read-only storage of captured binaries
+- Process metadata enrichment happens with dropped privileges
+- Web interface runs with minimal permissions
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
