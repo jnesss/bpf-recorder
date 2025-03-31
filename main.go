@@ -18,14 +18,24 @@ import (
 const (
 	DefaultDataDir  = "./data"
 	DefaultRulesDir = "./rules"
+	DefaultBinsDir  = "./bins"
 )
 
 func main() {
 	// Parse command line arguments
 	dataDir := flag.String("data", DefaultDataDir, "Directory for storing data")
 	rulesDir := flag.String("rules", DefaultRulesDir, "Directory for Sigma rules")
+	binsDir := flag.String("bins", DefaultBinsDir, "Directory for binary storage")
+	binCacheSize := flag.Int("bin-cache-size", 128, "Size of binary cache")
 	webOnly := flag.Bool("web-only", false, "Run in web UI only mode without BPF monitoring")
 	flag.Parse()
+
+	// Initialize binary cache
+	binaryCache, err := NewBinaryCache(*binCacheSize, *binsDir)
+	if err != nil {
+		fmt.Printf("Failed to initialize binary cache: %v\n", err)
+		os.Exit(1)
+	}
 
 	// Initialize metadata collector
 	collector := NewMetadataCollector()
@@ -62,7 +72,7 @@ func main() {
 
 	// Start web server in background
 	go func() {
-		if err := startWebServer(db, sigmaDetector); err != nil {
+		if err := startWebServer(db, sigmaDetector, binaryCache); err != nil {
 			fmt.Printf("Web server error: %v\n", err)
 		}
 	}()
@@ -74,7 +84,7 @@ func main() {
 		eventChan := make(chan Event, 1000) // Buffer size to handle bursts
 
 		// Start event processor and BPF reader
-		go startEventProcessor(eventChan, collector, db)
+		go startEventProcessor(eventChan, collector, db, binaryCache)
 		go startBPFReader(reader, eventChan)
 
 		fmt.Println("Process monitoring started... Press Ctrl+C to stop")
@@ -94,7 +104,7 @@ func main() {
 	}
 }
 
-func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB) {
+func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB, binaryCache *BinaryCache) {
 	// Each collection gets its own completion channel
 	done := collector.CollectProcessInfo(evt.PID)
 	info := <-done // We're guaranteed to get the right process's info
@@ -161,6 +171,37 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 		GID:         fmt.Sprintf("%d", evt.GID),
 	}
 
+	// Check if we have a valid executable path
+	if dbRecord.ExePath != "" && !strings.HasPrefix(dbRecord.ExePath, "/proc/") &&
+		!strings.HasPrefix(dbRecord.ExePath, "/dev/") && !strings.HasPrefix(dbRecord.ExePath, "/sys/") {
+
+		// Calculate MD5 hash
+		md5Hash, err := calculateMD5(dbRecord.ExePath)
+		if err != nil {
+			fmt.Printf("\nError calculating MD5 for %s: %v\n", dbRecord.ExePath, err)
+		} else {
+			// Add hash to the record
+			dbRecord.BinaryMD5 = md5Hash
+
+			// Check if binary is already in cache
+			if !binaryCache.HasBinary(md5Hash) {
+				// Check if binary exists on disk
+				binPath := binaryCache.GetBinaryPath(md5Hash)
+				if _, err := os.Stat(binPath); os.IsNotExist(err) {
+					// Store the binary
+					if err := binaryCache.StoreBinary(dbRecord.ExePath, md5Hash); err != nil {
+						fmt.Printf("\nError storing binary %s: %v\n", dbRecord.ExePath, err)
+					} else {
+						fmt.Printf("\nStored binary: %s (MD5: %s)\n", dbRecord.ExePath, md5Hash)
+					}
+				}
+
+				// Add to cache
+				binaryCache.AddBinary(md5Hash)
+			}
+		}
+	}
+
 	// Drop privileges for database operations
 	if err := dropPrivileges(); err != nil {
 		fmt.Printf("\nWarning: Failed to drop privileges: %v\n", err)
@@ -176,14 +217,14 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 	}
 }
 
-func startEventProcessor(eventChan chan Event, collector *MetadataCollector, db *DB) {
+func startEventProcessor(eventChan chan Event, collector *MetadataCollector, db *DB, binaryCache *BinaryCache) {
 	fmt.Println("Starting event processor...")
 	processCount := 0
 	for event := range eventChan {
 		switch event.EventType {
 		case EventExec:
 			processCount++
-			go processExecEvent(event, processCount, collector, db)
+			go processExecEvent(event, processCount, collector, db, binaryCache)
 		case EventExit:
 			collector.RemoveProcess(event.PID)
 		}
