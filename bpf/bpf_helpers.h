@@ -4,6 +4,16 @@
 /* Copied from libbpf for compatibility */
 #define SEC(NAME) __attribute__((section(NAME), used))
 
+// The bpf_trace_printk helper
+static int (*bpf_trace_printk)(const char *fmt, u32 fmt_size, ...) = (void*) 6;
+
+// The bpf_printk macro
+#define bpf_printk(fmt, ...)                                   \
+({                                                             \
+    char ____fmt[] = fmt;                                      \
+    bpf_trace_printk(____fmt, sizeof(____fmt), ##__VA_ARGS__); \
+})
+
 // BPF helper functions
 static void *(*bpf_get_current_task)(void) = (void*) 35;
 static u64 (*bpf_get_current_pid_tgid)(void) = (void*) 14;

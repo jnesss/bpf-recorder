@@ -71,7 +71,6 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     bpf_printk("Usermode path: %s", event.filename);
     
     // Now try to get the more reliable path from task_struct->mm->exe_file
-    void *task = bpf_get_current_task();
     if (!task) {
         bpf_printk("Failed to get current task");
         goto path_done;
