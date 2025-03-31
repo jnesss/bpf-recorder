@@ -50,13 +50,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Save current privileges
+	savedUID := os.Getuid()
+	savedGID := os.Getgid()
+
+	// Drop privileges before creating or opening the database
+	if err := dropPrivileges(); err != nil {
+		fmt.Printf("Failed to drop privileges: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Initialize database with proper permissions
-	db, err := initDatabaseWithUser(*dataDir)
+	db, err := NewDB(*dataDir)
 	if err != nil {
 		fmt.Printf("Failed to initialize database: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	// Restore privileges
+	syscall.Setreuid(savedUID, savedUID)
+	syscall.Setregid(savedGID, savedGID)
 
 	// Initialize Sigma detector
 	sigmaDetector, err := NewSigmaDetector(*rulesDir, db.db)
@@ -257,11 +271,6 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 		}
 	}
 
-	// Drop privileges for database operations
-	if err := dropPrivileges(); err != nil {
-		fmt.Printf("\nWarning: Failed to drop privileges: %v\n", err)
-	}
-
 	if err := db.InsertProcess(dbRecord); err != nil {
 		fmt.Printf("\nError inserting process record: %v\n", err)
 	} else {
@@ -331,14 +340,4 @@ func startBPFReader(reader PerfReader, eventChan chan Event) {
 		// Send event for processing
 		eventChan <- event
 	}
-}
-
-func initDatabaseWithUser(dataDir string) (*DB, error) {
-	// Drop privileges before doing anything with the database
-	if err := dropPrivileges(); err != nil {
-		return nil, fmt.Errorf("failed to drop privileges: %v", err)
-	}
-
-	// Create database as unprivileged user - they can create their own directory
-	return NewDB(dataDir)
 }
