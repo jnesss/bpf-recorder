@@ -191,9 +191,9 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 	}
 
 	// Get command line from BPF map
-	cmdLine := ""
+	var cmdLine string
 	if len(procinfo.CmdLine) > 0 {
-		cmdLine = strings.Join(procinfo.CmdLine, " ")
+		cmdLine = procinfo.CmdLine
 	} else if cmdlinesMapFD != 0 {
 		fullCmdLine, err := LookupCmdline(evt.PID)
 		if err == nil && fullCmdLine != "" {

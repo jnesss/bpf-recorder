@@ -14,7 +14,7 @@ type ProcessInfo struct {
 	PID           uint32
 	PPID          uint32
 	Comm          string
-	CmdLine       []string
+	CmdLine       string
 	ExePath       string
 	UID           uint32
 	Username      string
@@ -32,43 +32,17 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 		PPID: ppid,
 	}
 
-	/* we already get pid, ppid, uid, gid from kernel structure
-	// Get process status info (includes PPID, UID)
-	status, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
-	if err == nil {
-		lines := strings.Split(string(status), "\n")
-		for _, line := range lines {
-			parts := strings.Fields(line)
-			if len(parts) < 2 {
-				continue
-			}
-			switch parts[0] {
-			case "PPid:":
-				ppid, _ := strconv.ParseUint(parts[1], 10, 32)
-				info.PPID = uint32(ppid)
-			case "Uid:":
-				uid, _ := strconv.ParseUint(parts[1], 10, 32)
-				info.UID = uint32(uid)
-				if u, err := user.LookupId(parts[1]); err == nil {
-					info.Username = u.Username
-				}
-			}
-		}
-	}
-	*/
-
 	// Get process name
-	if exepath, err := os.Readlink(fmt.Sprintf("/proc/%d/comm", pid)); err == nil {
+	if exepath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid)); err == nil {
 		info.ExePath = exepath
 		info.Comm = filepath.Base(exepath)
+	} else {
+		fmt.Printf("couldn't look up exepath err %v\n", err)
 	}
 
 	// Get command line
 	if cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil {
-		args := strings.Split(strings.TrimRight(string(cmdline), "\x00"), "\x00")
-		if len(args) > 0 {
-			info.CmdLine = args
-		}
+		info.CmdLine = cmdline
 	}
 
 	// Get working directory
@@ -77,8 +51,8 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 	}
 
 	// Get parent process name and path if possible
-	if info.PPID > 0 {
-		if parentexepath, err := os.Readlink(fmt.Sprintf("/proc/%d/comm", ppid)); err == nil {
+	if ppid > 0 {
+		if parentexepath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", ppid)); err == nil {
 			info.ParentExePath = parentexepath
 			info.ParentComm = filepath.Base(parentexepath)
 		}
