@@ -25,7 +25,6 @@ static int (*bpf_get_current_comm)(void *buf, u32 size_of_buf) = (void*) 16;
 static int (*bpf_perf_event_output)(void* ctx, void* map, u64 flags, void* data, u64 size) = (void*) 25;
 static void* (*bpf_map_lookup_elem)(void* map, const void* key) = (void*) 1;
 static int (*bpf_map_update_elem)(void *map, const void *key, const void *value, u64 flags) = (void*) 2;
-static long (*bpf_d_path)(struct path *path, char *buf, u32 sz) = (void*) 168;
 
 #define BPF_ANY 0
 
