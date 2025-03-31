@@ -63,10 +63,53 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     event.uid = uid_gid & 0xffffffff;
     event.gid = uid_gid >> 32;
     
-    // Get filename (executable path)
+    // Get filename (executable path) from usermode as fallback
     const char* filename = (const char*)ctx->args[0];
     bpf_probe_read_str(&event.filename, sizeof(event.filename), filename);
     
+    // Log the user-mode path
+    bpf_printk("Usermode path: %s", event.filename);
+    
+    // Now try to get the more reliable path from task_struct->mm->exe_file
+    void *task = bpf_get_current_task();
+    if (!task) {
+        bpf_printk("Failed to get current task");
+        goto path_done;
+    }
+
+    void *mm = NULL;
+    bpf_probe_read(&mm, sizeof(mm), task + 2336); // kernel 6.1 mm offset
+    if (!mm) {
+        bpf_printk("Failed to read mm from task");
+        goto path_done;
+    }
+
+    void *exe_file = NULL;
+    bpf_probe_read(&exe_file, sizeof(exe_file), mm + 880); // kernel 6.1 exe_file offset
+    if (!exe_file) {
+        bpf_printk("Failed to read exe_file from mm");
+        goto path_done;
+    }
+
+    // Try using bpf_d_path helper (available in kernel 5.10+)
+    struct path file_path;
+    bpf_probe_read(&file_path, sizeof(file_path), exe_file + 16); // kernel 6.1 f_path offset
+
+    char kernel_path[256] = {0};
+    long path_len = bpf_d_path(&file_path, kernel_path, sizeof(kernel_path));
+    if (path_len > 0) {
+        // Successfully got the path, copy it to event
+        bpf_printk("Kernel path (d_path): %s", kernel_path);
+        bpf_probe_read_str(&event.filename, sizeof(event.filename), kernel_path);
+    } else {
+        bpf_printk("bpf_d_path failed: %ld", path_len);
+        // Keep using the user-provided path as fallback
+    }
+
+    path_done:
+    // Log the final path we're using
+    bpf_printk("Final path: %s", event.filename);
+
     // Store PID as map ID for userspace lookup
     u32 pid = event.pid;
     event.cmdline_map_id = pid;
