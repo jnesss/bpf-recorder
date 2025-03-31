@@ -215,10 +215,12 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 	// Get command line from BPF map
 	var cmdLine string
 	if len(procinfo.CmdLine) > 0 {
+		fmt.Printf("Using UM CmdLine: [%v]\n", procinfo.CmdLine)
 		cmdLine = procinfo.CmdLine
 	} else if cmdlinesMapFD != 0 {
 		fullCmdLine, err := LookupCmdline(evt.PID)
 		if err == nil && fullCmdLine != "" {
+			fmt.Printf("Using KM CmdLine: [%v]\n", procinfo.CmdLine)
 			cmdLine = fullCmdLine
 		}
 	}

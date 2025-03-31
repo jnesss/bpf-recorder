@@ -109,6 +109,7 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 		fmt.Printf("couldn't look up cmdline a second time (that's fine) err %v\n", err)
 	}
 
+	fmt.Printf("Final CmdLine: [%v]\n", info.CmdLine)
 	return info, nil
 }
 
