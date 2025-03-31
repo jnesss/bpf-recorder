@@ -14,6 +14,7 @@ require (
 	github.com/PaesslerAG/jsonpath v0.1.1 // indirect
 	github.com/alecthomas/participle v0.7.1 // indirect
 	github.com/fsnotify/fsnotify v1.8.0 // indirect
+	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	golang.org/x/sys v0.30.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
