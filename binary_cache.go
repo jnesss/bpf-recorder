@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -20,6 +21,11 @@ func NewBinaryCache(size int, binsDir string) (*BinaryCache, error) {
 	cache, err := lru.New(size)
 	if err != nil {
 		return nil, err
+	}
+
+	// Drop privileges before doing anything with the bins dir
+	if err := dropPrivileges(); err != nil {
+		return nil, fmt.Errorf("failed to drop privileges: %v", err)
 	}
 
 	// Create bins directory if it doesn't exist
@@ -52,6 +58,18 @@ func (c *BinaryCache) GetBinaryPath(hash string) string {
 
 // StoreBinary copies a binary to the storage location based on its hash
 func (c *BinaryCache) StoreBinary(sourcePath, hash string) error {
+	// Copy the file
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	// Drop privileges before doing anything with the bins dir
+	if err := dropPrivileges(); err != nil {
+		return fmt.Errorf("failed to drop privileges: %v", err)
+	}
+
 	// Create directory if needed
 	prefix := hash[:2]
 	dirPath := filepath.Join(c.binsDir, prefix)
@@ -61,14 +79,6 @@ func (c *BinaryCache) StoreBinary(sourcePath, hash string) error {
 
 	// Set the destination path
 	destPath := filepath.Join(dirPath, hash+".bin")
-
-	// Copy the file
-	sourceFile, err := os.Open(sourcePath)
-	if err != nil {
-		return err
-	}
-	defer sourceFile.Close()
-
 	destFile, err := os.Create(destPath)
 	if err != nil {
 		return err

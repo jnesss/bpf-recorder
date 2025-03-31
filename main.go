@@ -30,13 +30,6 @@ func main() {
 	webOnly := flag.Bool("web-only", false, "Run in web UI only mode without BPF monitoring")
 	flag.Parse()
 
-	// Initialize binary cache
-	binaryCache, err := NewBinaryCache(*binCacheSize, *binsDir)
-	if err != nil {
-		fmt.Printf("Failed to initialize binary cache: %v\n", err)
-		os.Exit(1)
-	}
-
 	// Initialize metadata collector
 	collector := NewMetadataCollector()
 
@@ -48,6 +41,13 @@ func main() {
 	}
 	if cleanup != nil {
 		defer cleanup()
+	}
+
+	// Initialize binary cache
+	binaryCache, err := NewBinaryCache(*binCacheSize, *binsDir)
+	if err != nil {
+		fmt.Printf("Failed to initialize binary cache: %v\n", err)
+		os.Exit(1)
 	}
 
 	// Initialize database with proper permissions
