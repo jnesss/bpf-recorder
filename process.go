@@ -42,7 +42,7 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 
 	// Get command line
 	if cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); err == nil {
-		info.CmdLine = cmdline
+		info.CmdLine = string(cmdline)
 	}
 
 	// Get working directory
