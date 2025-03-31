@@ -158,14 +158,6 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 
 	// Use usermode process name from /proc if we have it, otherwise kernel-mode
 	var comm string
-
-	fmt.Printf("Evaluating %v\n", evt.PID)
-	if len(bytes.TrimRight(evt.Comm[:], "\x00")) > 0 {
-		kmcomm := string(bytes.TrimRight(evt.Comm[:], "\x00"))
-		fmt.Printf("KM Comm [%v]\n", kmcomm)
-	}
-	fmt.Printf("UM Comm [%v]\n", procinfo.Comm)
-
 	if len(procinfo.Comm) > 0 {
 		comm = procinfo.Comm
 	} else {
@@ -180,7 +172,6 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 		// kernel verified this process has a valid exe
 		exepath = procinfo.ExePath
 	} else {
-		fmt.Printf("processExecEvent flags %v procinfo.ExePath [%v]\n", evt.Flags, procinfo.ExePath)
 		if len(bytes.TrimRight(evt.Filename[:], "\x00")) > 0 {
 			exepath = string(bytes.TrimRight(evt.Filename[:], "\x00"))
 		}
@@ -215,12 +206,10 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 	// Get command line from BPF map
 	var cmdLine string
 	if len(procinfo.CmdLine) > 0 {
-		fmt.Printf("Using UM CmdLine: [%v]\n", procinfo.CmdLine)
 		cmdLine = procinfo.CmdLine
 	} else if cmdlinesMapFD != 0 {
 		fullCmdLine, err := LookupCmdline(evt.PID)
 		if err == nil && fullCmdLine != "" {
-			fmt.Printf("Using KM CmdLine: [%v]\n", procinfo.CmdLine)
 			cmdLine = fullCmdLine
 		}
 	}
@@ -319,24 +308,6 @@ func startBPFReader(reader PerfReader, eventChan chan Event) {
 		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
 			fmt.Printf("Error parsing event: %v\n", err)
 			continue
-		}
-
-		if event.EventType == EventExec {
-			// Try to read command line from map
-			if cmdlinesMapFD != 0 {
-				key := event.PID
-
-				// Lookup the command line from the map
-				cmdLine, err := LookupCmdline(key)
-				if err != nil {
-					fmt.Printf("Failed to read command line for PID %d: %v\n", key, err)
-				} else {
-					fmt.Printf("PID %d command line: %s\n", key, cmdLine)
-				}
-
-				// Also print the executable for comparison
-				fmt.Printf("PID %d executable: %s\n", key, strings.TrimRight(string(event.Filename[:]), "\x00"))
-			}
 		}
 
 		// Send event for processing

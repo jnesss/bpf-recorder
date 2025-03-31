@@ -35,18 +35,14 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 
 	// Get process name
 	if exepath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid)); err == nil {
-		fmt.Printf("%v: Procinfo comm is [%v]\n", pid, exepath)
 		info.ExePath = exepath
 		info.Comm = filepath.Base(exepath)
-	} else {
-		fmt.Printf("couldn't look up exepath err %v\n", err)
 	}
 
 	// Get command line
 	cmdline, err := ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 	if err != nil {
 		info.CmdLine = strings.ReplaceAll(string(cmdline), string([]byte{0}), " ")
-		fmt.Printf("%v: Procinfo cmdline is [%v]\n", pid, info.CmdLine)
 	}
 
 	// Get working directory
@@ -95,23 +91,16 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 
 	// try to get exepath a second time
 	if exepath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid)); err == nil {
-		fmt.Printf("%v: Second Procinfo comm is [%v]\n", pid, exepath)
 		info.ExePath = exepath
 		info.Comm = filepath.Base(exepath)
-	} else {
-		fmt.Printf("couldn't look up exepath second time (that's fine) err %v\n", err)
 	}
 
 	// try to get cmdline a second time
 	cmdline, err = ioutil.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid))
 	if err != nil {
 		info.CmdLine = strings.ReplaceAll(string(cmdline), string([]byte{0}), " ")
-		fmt.Printf("%v: Procinfo second attempt cmdline is [%v]\n", pid, info.CmdLine)
-	} else {
-		fmt.Printf("couldn't look up cmdline a second time (that's fine) err %v\n", err)
 	}
 
-	fmt.Printf("Final CmdLine: [%v]\n", info.CmdLine)
 	return info, nil
 }
 
