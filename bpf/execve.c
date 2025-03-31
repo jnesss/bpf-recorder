@@ -75,18 +75,25 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     // Get filename (executable path) from usermode as fallback
     const char* filename = (const char*)ctx->args[0];
     bpf_probe_read_str(&event.filename, sizeof(event.filename), filename);
-    
+
+    // Add a simple log for the fallback path
+    bpf_printk("Fallback path: %s", event.filename);
+
     // Now try to get the more reliable path from task_struct->mm->exe_file
     // Use existing task pointer (already initialized above)
     if (task) {
         void *mm = NULL;
         bpf_probe_read(&mm, sizeof(mm), task + 2336); // kernel 6.1 mm offset
     
-        if (mm) {
+        if (!mm) {
+            bpf_printk("No mm struct found");
+        } else {
             void *exe_file = NULL;
             bpf_probe_read(&exe_file, sizeof(exe_file), mm + 880); // kernel 6.1 exe_file offset
         
-            if (exe_file) {
+            if (!exe_file) {
+                bpf_printk("No exe_file found");
+            } else {
                 // Try using bpf_d_path helper (available in kernel 5.10+)
                 struct path file_path;
                 bpf_probe_read(&file_path, sizeof(file_path), exe_file + 16); // kernel 6.1 f_path offset
@@ -99,14 +106,20 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
                     __builtin_memset(path_buf, 0, 256);
                 
                     long path_len = bpf_d_path(&file_path, path_buf, 256);
-                    if (path_len > 0) {
-                        // Successfully got the path, copy it to event
+                    if (path_len <= 0) {
+                        bpf_printk("bpf_d_path failed: %ld", path_len);
+                    } else {
+                        // Successfully got the path, log it and copy to event
+                        bpf_printk("Kernel path: %s", path_buf);
                         bpf_probe_read_str(&event.filename, sizeof(event.filename), path_buf);
                     }
                 }
             }
         }
     }
+
+    // Log the final path we're using
+    bpf_printk("Final path: %s", event.filename);
 
     // Store PID as map ID for userspace lookup
     u32 pid = event.pid;
