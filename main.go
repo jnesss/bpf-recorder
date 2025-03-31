@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"log"
 	"os"
 	"os/signal"
 	"os/user"
@@ -13,7 +15,18 @@ import (
 	"time"
 )
 
+const (
+	DefaultDataDir  = "./data"
+	DefaultRulesDir = "./rules"
+)
+
 func main() {
+	// Parse command line arguments
+	dataDir := flag.String("data", DefaultDataDir, "Directory for storing data")
+	rulesDir := flag.String("rules", DefaultRulesDir, "Directory for Sigma rules")
+	webOnly := flag.Bool("web-only", false, "Run in web UI only mode without BPF monitoring")
+	flag.Parse()
+
 	// Initialize metadata collector
 	collector := NewMetadataCollector()
 
@@ -28,23 +41,35 @@ func main() {
 	}
 
 	// Initialize database with proper permissions
-	db, err := initDatabaseWithUser()
+	db, err := initDatabaseWithUser(*dataDir)
 	if err != nil {
 		fmt.Printf("Failed to initialize database: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close()
 
+	// Initialize Sigma detector
+	sigmaDetector, err := NewSigmaDetector(*rulesDir, db.db)
+	if err != nil {
+		log.Printf("Warning: Failed to initialize Sigma detector: %v", err)
+		// Continue without Sigma detection
+	} else {
+		// Start Sigma detection polling (every 10 seconds)
+		if err := sigmaDetector.StartPolling(10 * time.Second); err != nil {
+			log.Printf("Warning: Failed to start Sigma detection: %v", err)
+		}
+	}
+
 	// Start web server in background
 	go func() {
-		if err := startWebServer(db); err != nil {
+		if err := startWebServer(db, sigmaDetector); err != nil {
 			fmt.Printf("Web server error: %v\n", err)
 		}
 	}()
 	fmt.Println("Web interface available at http://localhost:8080")
 
 	// Only start BPF monitoring if we have a reader (not on Mac)
-	if reader != nil {
+	if reader != nil && !*webOnly {
 		// Create buffered channel for events
 		eventChan := make(chan Event, 1000) // Buffer size to handle bursts
 
@@ -62,6 +87,11 @@ func main() {
 	// Wait for signal
 	<-sig
 	fmt.Println("Shutting down...")
+
+	// Stop Sigma detector if it was running
+	if sigmaDetector != nil {
+		sigmaDetector.StopPolling()
+	}
 }
 
 func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB) {
@@ -207,9 +237,7 @@ func startBPFReader(reader PerfReader, eventChan chan Event) {
 	}
 }
 
-func initDatabaseWithUser() (*DB, error) {
-	dataDir := "data"
-
+func initDatabaseWithUser(dataDir string) (*DB, error) {
 	// Drop privileges before doing anything with the database
 	if err := dropPrivileges(); err != nil {
 		return nil, fmt.Errorf("failed to drop privileges: %v", err)
