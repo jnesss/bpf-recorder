@@ -86,6 +86,15 @@ func GetProcessInfo(pid uint32, ppid uint32) (*ProcessInfo, error) {
 		info.Environment = strings.Split(string(env), "\x00")
 	}
 
+	// Retry process name in hopes that process fork and startup is done
+	if exepath, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid)); err == nil {
+		fmt.Printf("%v: Second Procinfo comm is [%v]\n", pid, exepath)
+		info.ExePath = exepath
+		info.Comm = filepath.Base(exepath)
+	} else {
+		fmt.Printf("couldn't look up exepath err %v\n", err)
+	}
+
 	return info, nil
 }
 
