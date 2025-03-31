@@ -104,69 +104,116 @@ func main() {
 	}
 }
 
+/*
+struct event {
+    // 8-byte aligned fields
+    u64 timestamp;   // 8 bytes
+
+    // 4-byte aligned fields
+    u32 pid;         // 4 bytes
+    u32 ppid;        // 4 bytes
+    uid_t uid;       // 4 bytes
+    gid_t gid;       // 4 bytes
+    int event_type;  // 4 bytes
+    int exit_code;   // 4 bytes
+    u32 flags;       // 4 bytes
+
+    // Variable-length fields
+   x char comm[16];           // Process name
+   x char parent_comm[16];    // Parent process name
+    char filename[64];       // Executable path
+    char cwd[64];            // Current working directory
+
+    // For command line tracking
+    u32 cmdline_map_id;      // ID to lookup command line in the map
+
+} __attribute__((packed));
+*/
+
 func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB, binaryCache *BinaryCache) {
 	// Each collection gets its own completion channel
-	done := collector.CollectProcessInfo(evt.PID)
-	info := <-done // We're guaranteed to get the right process's info
+	done := collector.CollectProcessInfo(evt.PID, evt.PPID)
+	procinfo := <-done // We're guaranteed to get the right process's info
 
-	if info == nil {
-		info = &ProcessInfo{
+	if procinfo == nil {
+		procinfo = &ProcessInfo{
 			PID:  evt.PID,
-			Comm: string(bytes.TrimRight(evt.Comm[:], "\x00")),
+			PPID: evt.PPID,
 		}
 	}
 
-	// Merge event data with collected process info
-	ppid := info.PPID
-	if evt.PPID > 0 {
-		ppid = evt.PPID
+	// Use usermode process name from /proc if we have it, otherwise kernel-mode
+	var comm string
+	if len(procinfo.Comm) > 0 {
+		comm = procinfo.Comm
+	} else {
+		if len(bytes.TrimRight(evt.Comm[:], "\x00")) > 0 {
+			comm = string(bytes.TrimRight(evt.Comm[:], "\x00"))
+		}
 	}
 
-	parentComm := info.ParentComm
-	if len(bytes.TrimRight(evt.ParentComm[:], "\x00")) > 0 {
-		parentComm = string(bytes.TrimRight(evt.ParentComm[:], "\x00"))
+	// Use usermode exe path from /proc if we have it, otherwise kernel-mode
+	var exepath string
+	if (evt.Flags&1 == 1) && (len(procinfo.ExePath) > 0) {
+		// kernel verified this process has a valid exe
+		exepath = procinfo.ExePath
+	} else {
+		fmt.Printf("processExecEvent flags %v procinfo.ExePath [%v]\n", evt.Flags, procinfo.ExePath)
+		if len(bytes.TrimRight(evt.Filename[:], "\x00")) > 0 {
+			exepath = string(bytes.TrimRight(evt.Filename[:], "\x00"))
+		}
 	}
 
-	username := info.Username
-	if evt.UID > 0 && username == "" {
+	// Use usermode ParentComm if we have it, otherwise kernel-mode
+	var parentComm string
+	if len(procinfo.ParentComm) > 0 {
+		parentComm = procinfo.ParentComm
+	} else {
+		if len(bytes.TrimRight(evt.ParentComm[:], "\x00")) > 0 {
+			parentComm = string(bytes.TrimRight(evt.ParentComm[:], "\x00"))
+		}
+	}
+	var workingDir string
+	if len(procinfo.WorkingDir) > 0 {
+		workingDir = procinfo.WorkingDir
+	} else {
+		if len(bytes.TrimRight(evt.CWD[:], "\x00")) > 0 {
+			workingDir = string(bytes.TrimRight(evt.CWD[:], "\x00"))
+		}
+	}
+
+	// try to get username from kernel-mode passed in uid
+	var username string
+	if evt.UID > 0 {
 		if u, err := user.LookupId(fmt.Sprintf("%d", evt.UID)); err == nil {
 			username = u.Username
 		}
 	}
 
-	workingDir := info.WorkingDir
-	if len(bytes.TrimRight(evt.CWD[:], "\x00")) > 0 {
-		workingDir = string(bytes.TrimRight(evt.CWD[:], "\x00"))
-	}
-
 	// Get command line from BPF map
 	cmdLine := ""
-	if cmdlinesMapFD != 0 {
+	if len(procinfo.CmdLine) > 0 {
+		cmdLine = strings.Join(procinfo.CmdLine, " ")
+	} else if cmdlinesMapFD != 0 {
 		fullCmdLine, err := LookupCmdline(evt.PID)
 		if err == nil && fullCmdLine != "" {
 			cmdLine = fullCmdLine
-		} else if len(info.CmdLine) > 0 {
-			// Fallback to /proc
-			cmdLine = strings.Join(info.CmdLine, " ")
 		}
-	} else if len(info.CmdLine) > 0 {
-		// Fallback to /proc
-		cmdLine = strings.Join(info.CmdLine, " ")
 	}
 
-	envJSON, _ := json.Marshal(info.Environment)
+	envJSON, _ := json.Marshal(procinfo.Environment)
 	dbRecord := &ProcessRecord{
-		Timestamp:   time.Now(),
-		PID:         info.PID,
-		PPID:        ppid,
-		Comm:        info.Comm,
+		Timestamp:   time.Unix(0, int64(evt.Timestamp)),
+		PID:         evt.PID,
+		PPID:        evt.PPID,
+		Comm:        comm,
 		CmdLine:     cmdLine,
-		ExePath:     info.ExePath,
+		ExePath:     exepath,
 		WorkingDir:  workingDir,
 		Username:    username,
 		ParentComm:  parentComm,
 		Environment: string(envJSON),
-		ContainerID: info.ContainerID,
+		ContainerID: procinfo.ContainerID,
 		UID:         fmt.Sprintf("%d", evt.UID),
 		GID:         fmt.Sprintf("%d", evt.GID),
 	}
