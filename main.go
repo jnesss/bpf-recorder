@@ -265,15 +265,47 @@ func startProcessEventProcessor(eventChan chan Event, collector *MetadataCollect
 	}
 }
 
+// startNetworkEventProcessor processes network events from eBPF
 func startNetworkEventProcessor(eventChan chan NetworkEvent, collector *MetadataCollector, db *DB) {
 	fmt.Println("Starting network event processor...")
 	connectionCount := 0
+
+	// Map to convert operation codes to human-readable strings
+	operationNames := map[uint8]string{
+		NetOperationConnect: "connect",
+		NetOperationAccept:  "accept",
+		NetOperationBind:    "bind",
+	}
+
+	// Map to convert protocol codes to human-readable strings
+	protocolNames := map[uint8]string{
+		NetProtocolTCP: "TCP",
+		NetProtocolUDP: "UDP",
+	}
+
 	for event := range eventChan {
 		connectionCount++
 
+		// Get human-readable operation name
+		opName := operationNames[event.Operation]
+		if opName == "" {
+			opName = fmt.Sprintf("unknown(%d)", event.Operation)
+		}
+
+		// Get human-readable protocol name
+		protoName := protocolNames[event.Protocol]
+		if protoName == "" {
+			protoName = fmt.Sprintf("unknown(%d)", event.Protocol)
+		}
+
+		// Debug logging
+		commStr := bytesToString(event.Comm[:])
+		fmt.Printf("\nNetwork event: %s %s by %s (PID %d), success: %v\n",
+			opName, protoName, commStr, event.PID, event.ReturnCode >= 0)
+
 		// Process network event
 		if err := processNetworkEvent(event, collector, db); err != nil {
-			fmt.Printf("\nError processing network event: %v\n", err)
+			fmt.Printf("Error processing network event: %v\n", err)
 		} else {
 			// Print progress indicator
 			fmt.Print("n")
@@ -286,6 +318,8 @@ func startNetworkEventProcessor(eventChan chan NetworkEvent, collector *Metadata
 
 // startBPFReader reads events from the BPF perfBuffer and dispatches them to the appropriate channel
 func startBPFReader(reader PerfReader, processEventChan chan Event, networkEventChan chan NetworkEvent) {
+	fmt.Println("Starting BPF event reader...")
+
 	for {
 		record, err := reader.Read()
 		if err != nil {
@@ -303,33 +337,43 @@ func startBPFReader(reader PerfReader, processEventChan chan Event, networkEvent
 			continue
 		}
 
-		// Determine the event type based on the size or initial bytes
-		// Process events and network events have different sizes
-		if len(record.RawSample) > 0 {
-			// Try to identify event type based on size or data pattern
-			if len(record.RawSample) == int(unsafe.Sizeof(Event{})) {
-				// Likely a process event
-				var event Event
-				if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
-					fmt.Printf("Error parsing process event: %v\n", err)
-					continue
-				}
+		// Determine the event type based on the size
+		if len(record.RawSample) == 0 {
+			continue
+		}
 
-				// Send to process event channel
-				processEventChan <- event
-			} else if len(record.RawSample) == int(unsafe.Sizeof(NetworkEvent{})) {
-				// Likely a network event
-				var netEvent NetworkEvent
-				if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &netEvent); err != nil {
-					fmt.Printf("Error parsing network event: %v\n", err)
-					continue
-				}
+		// Try to determine event type based on size
+		eventSize := len(record.RawSample)
+		procEventSize := int(unsafe.Sizeof(Event{}))
+		netEventSize := int(unsafe.Sizeof(NetworkEvent{}))
 
-				// Send to network event channel
-				networkEventChan <- netEvent
-			} else {
-				fmt.Printf("Unknown event type with size %d bytes\n", len(record.RawSample))
+		switch eventSize {
+		case procEventSize:
+			// Process event
+			var event Event
+			if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+				fmt.Printf("Error parsing process event: %v\n", err)
+				continue
 			}
+
+			// Send to process event channel
+			processEventChan <- event
+
+		case netEventSize:
+			// Network event
+			var netEvent NetworkEvent
+			if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &netEvent); err != nil {
+				fmt.Printf("Error parsing network event: %v\n", err)
+				continue
+			}
+
+			// Send to network event channel
+			networkEventChan <- netEvent
+
+		default:
+			// Unknown event type
+			fmt.Printf("Unknown event size: %d bytes (proc: %d, net: %d)\n",
+				eventSize, procEventSize, netEventSize)
 		}
 	}
 }
