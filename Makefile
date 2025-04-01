@@ -21,3 +21,5 @@ endif
 clean:
 	rm -f bpf-recorder
 	rm -f *.o
+	rm -f *_bpfeb.go
+	rm -f *_bpfel.go
