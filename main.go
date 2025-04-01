@@ -13,6 +13,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
 
 const (
@@ -95,11 +96,15 @@ func main() {
 	// Only start BPF monitoring if we have a reader (not on Mac)
 	if reader != nil && !*webOnly {
 		// Create buffered channel for events
-		eventChan := make(chan Event, 1000) // Buffer size to handle bursts
+		processEventChan := make(chan Event, 1000)        // Buffer size to handle bursts
+		networkEventChan := make(chan NetworkEvent, 1000) // Buffer size for network events
 
-		// Start event processor and BPF reader
-		go startEventProcessor(eventChan, collector, db, binaryCache)
-		go startBPFReader(reader, eventChan)
+		// Start event processors
+		go startProcessEventProcessor(processEventChan, collector, db, binaryCache)
+		go startNetworkEventProcessor(networkEventChan, collector, db)
+
+		// Start BPF reader
+		go startBPFReader(reader, processEventChan, networkEventChan)
 
 		fmt.Println("Process monitoring started... Press Ctrl+C to stop")
 	}
@@ -117,32 +122,6 @@ func main() {
 		sigmaDetector.StopPolling()
 	}
 }
-
-/*
-struct event {
-    // 8-byte aligned fields
-    u64 timestamp;   // 8 bytes
-
-    // 4-byte aligned fields
-    u32 pid;         // 4 bytes
-    u32 ppid;        // 4 bytes
-    uid_t uid;       // 4 bytes
-    gid_t gid;       // 4 bytes
-    int event_type;  // 4 bytes
-    int exit_code;   // 4 bytes
-    u32 flags;       // 4 bytes
-
-    // Variable-length fields
-   x char comm[16];           // Process name
-   x char parent_comm[16];    // Parent process name
-    char filename[64];       // Executable path
-    char cwd[64];            // Current working directory
-
-    // For command line tracking
-    u32 cmdline_map_id;      // ID to lookup command line in the map
-
-} __attribute__((packed));
-*/
 
 func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB, binaryCache *BinaryCache) {
 	// Each collection gets its own completion channel
@@ -272,8 +251,8 @@ func processExecEvent(evt Event, count int, collector *MetadataCollector, db *DB
 	}
 }
 
-func startEventProcessor(eventChan chan Event, collector *MetadataCollector, db *DB, binaryCache *BinaryCache) {
-	fmt.Println("Starting event processor...")
+func startProcessEventProcessor(eventChan chan Event, collector *MetadataCollector, db *DB, binaryCache *BinaryCache) {
+	fmt.Println("Starting process event processor...")
 	processCount := 0
 	for event := range eventChan {
 		switch event.EventType {
@@ -286,13 +265,33 @@ func startEventProcessor(eventChan chan Event, collector *MetadataCollector, db 
 	}
 }
 
-func startBPFReader(reader PerfReader, eventChan chan Event) {
-	var event Event
+func startNetworkEventProcessor(eventChan chan NetworkEvent, collector *MetadataCollector, db *DB) {
+	fmt.Println("Starting network event processor...")
+	connectionCount := 0
+	for event := range eventChan {
+		connectionCount++
+
+		// Process network event
+		if err := processNetworkEvent(event, collector, db); err != nil {
+			fmt.Printf("\nError processing network event: %v\n", err)
+		} else {
+			// Print progress indicator
+			fmt.Print("n")
+			if connectionCount%100 == 0 {
+				fmt.Printf(" [%d]\n", connectionCount)
+			}
+		}
+	}
+}
+
+// startBPFReader reads events from the BPF perfBuffer and dispatches them to the appropriate channel
+func startBPFReader(reader PerfReader, processEventChan chan Event, networkEventChan chan NetworkEvent) {
 	for {
 		record, err := reader.Read()
 		if err != nil {
 			if strings.Contains(err.Error(), "closed") {
-				close(eventChan)
+				close(processEventChan)
+				close(networkEventChan)
 				return
 			}
 			fmt.Printf("Error reading perf buffer: %v\n", err)
@@ -304,13 +303,33 @@ func startBPFReader(reader PerfReader, eventChan chan Event) {
 			continue
 		}
 
-		// Parse event data
-		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
-			fmt.Printf("Error parsing event: %v\n", err)
-			continue
-		}
+		// Determine the event type based on the size or initial bytes
+		// Process events and network events have different sizes
+		if len(record.RawSample) > 0 {
+			// Try to identify event type based on size or data pattern
+			if len(record.RawSample) == int(unsafe.Sizeof(Event{})) {
+				// Likely a process event
+				var event Event
+				if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &event); err != nil {
+					fmt.Printf("Error parsing process event: %v\n", err)
+					continue
+				}
 
-		// Send event for processing
-		eventChan <- event
+				// Send to process event channel
+				processEventChan <- event
+			} else if len(record.RawSample) == int(unsafe.Sizeof(NetworkEvent{})) {
+				// Likely a network event
+				var netEvent NetworkEvent
+				if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &netEvent); err != nil {
+					fmt.Printf("Error parsing network event: %v\n", err)
+					continue
+				}
+
+				// Send to network event channel
+				networkEventChan <- netEvent
+			} else {
+				fmt.Printf("Unknown event type with size %d bytes\n", len(record.RawSample))
+			}
+		}
 	}
 }
