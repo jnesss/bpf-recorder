@@ -8,8 +8,24 @@ package main
 
 // Event types
 const (
-	EventExec = 1
-	EventExit = 2
+	EventExec    = 1
+	EventExit    = 2
+	EventConnect = 3
+	EventAccept  = 4
+	EventBind    = 5
+)
+
+// Network operation types
+const (
+	NetOperationConnect = 1
+	NetOperationAccept  = 2
+	NetOperationBind    = 3
+)
+
+// Network protocols
+const (
+	NetProtocolTCP = 6  // Matches IPPROTO_TCP
+	NetProtocolUDP = 17 // Matches IPPROTO_UDP
 )
 
 // Event represents a process event from the BPF layer
@@ -31,6 +47,36 @@ type Event struct {
 	ParentComm [16]byte
 	Filename   [64]byte
 	CWD        [64]byte
+}
+
+// NetworkEvent represents a network connection event from the BPF layer
+type NetworkEvent struct {
+	// 8-byte aligned fields
+	Timestamp uint64
+
+	// 4-byte aligned fields
+	PID        uint32
+	PPID       uint32
+	UID        uint32
+	GID        uint32
+	SrcAddrV4  uint32
+	DstAddrV4  uint32
+	SrcPort    uint16
+	DstPort    uint16
+	IPVersion  uint8
+	Protocol   uint8
+	Operation  uint8
+	Padding    uint8
+	ReturnCode int32
+
+	// Variable-length fields
+	Comm       [16]byte
+	ParentComm [16]byte
+	ExePath    [64]byte
+
+	// IPv6 addresses (if applicable)
+	SrcAddrV6 [4]uint32
+	DstAddrV6 [4]uint32
 }
 
 // PerfReader defines a platform-agnostic interface for reading monitoring events.
