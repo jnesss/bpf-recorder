@@ -130,12 +130,18 @@ func InitBPF() (PerfReader, func(), error) {
 	// Attach network kprobes if loaded successfully
 	if networkObjs.KprobeSysConnect != nil {
 		// Try attaching connect kprobe with different syscall name formats
-		connectKprobe, err := link.Kprobe("SyS_connect", networkObjs.KprobeSysConnect, nil)
+		connectKprobe, err := link.Kprobe("__x64_sys_connect", networkObjs.KprobeSysConnect, nil)
 		if err != nil {
-			// Try without SyS_ prefix
-			connectKprobe, err = link.Kprobe("connect", networkObjs.KprobeSysConnect, nil)
+			// Try alternative x86 name
+			connectKprobe, err = link.Kprobe("__ia32_sys_connect", networkObjs.KprobeSysConnect, nil)
 			if err != nil {
-				fmt.Printf("Warning: Could not attach connect kprobe: %v\n", err)
+				// Try raw name
+				connectKprobe, err = link.Kprobe("connect", networkObjs.KprobeSysConnect, nil)
+				if err != nil {
+					fmt.Printf("Warning: Could not attach connect kprobe: %v\n", err)
+				} else {
+					cleanupFuncs = append(cleanupFuncs, func() { connectKprobe.Close() })
+				}
 			} else {
 				cleanupFuncs = append(cleanupFuncs, func() { connectKprobe.Close() })
 			}
@@ -144,12 +150,18 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching connect kretprobe with different syscall name formats
-		connectKretprobe, err := link.Kretprobe("SyS_connect", networkObjs.KretprobeSysConnect, nil)
+		connectKretprobe, err := link.Kretprobe("__x64_sys_connect", networkObjs.KretprobeSysConnect, nil)
 		if err != nil {
-			// Try without SyS_ prefix
-			connectKretprobe, err = link.Kretprobe("connect", networkObjs.KretprobeSysConnect, nil)
+			// Try alternative x86 name
+			connectKretprobe, err = link.Kretprobe("__ia32_sys_connect", networkObjs.KretprobeSysConnect, nil)
 			if err != nil {
-				fmt.Printf("Warning: Could not attach connect kretprobe: %v\n", err)
+				// Try raw name
+				connectKretprobe, err = link.Kretprobe("connect", networkObjs.KretprobeSysConnect, nil)
+				if err != nil {
+					fmt.Printf("Warning: Could not attach connect kretprobe: %v\n", err)
+				} else {
+					cleanupFuncs = append(cleanupFuncs, func() { connectKretprobe.Close() })
+				}
 			} else {
 				cleanupFuncs = append(cleanupFuncs, func() { connectKretprobe.Close() })
 			}
@@ -158,12 +170,24 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching accept kprobe with different syscall name formats
-		acceptKprobe, err := link.Kprobe("SyS_accept", networkObjs.KprobeSysAccept, nil)
+		acceptKprobe, err := link.Kprobe("__x64_sys_accept", networkObjs.KprobeSysAccept, nil)
 		if err != nil {
-			// Try without SyS_ prefix
-			acceptKprobe, err = link.Kprobe("accept", networkObjs.KprobeSysAccept, nil)
+			// Try accept4 variant (often used instead of accept)
+			acceptKprobe, err = link.Kprobe("__x64_sys_accept4", networkObjs.KprobeSysAccept, nil)
 			if err != nil {
-				fmt.Printf("Warning: Could not attach accept kprobe: %v\n", err)
+				// Try alternative x86 name
+				acceptKprobe, err = link.Kprobe("__ia32_sys_accept", networkObjs.KprobeSysAccept, nil)
+				if err != nil {
+					// Try raw name
+					acceptKprobe, err = link.Kprobe("accept", networkObjs.KprobeSysAccept, nil)
+					if err != nil {
+						fmt.Printf("Warning: Could not attach accept kprobe: %v\n", err)
+					} else {
+						cleanupFuncs = append(cleanupFuncs, func() { acceptKprobe.Close() })
+					}
+				} else {
+					cleanupFuncs = append(cleanupFuncs, func() { acceptKprobe.Close() })
+				}
 			} else {
 				cleanupFuncs = append(cleanupFuncs, func() { acceptKprobe.Close() })
 			}
@@ -172,12 +196,24 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching accept kretprobe with different syscall name formats
-		acceptKretprobe, err := link.Kretprobe("SyS_accept", networkObjs.KretprobeSysAccept, nil)
+		acceptKretprobe, err := link.Kretprobe("__x64_sys_accept", networkObjs.KretprobeSysAccept, nil)
 		if err != nil {
-			// Try without SyS_ prefix
-			acceptKretprobe, err = link.Kretprobe("accept", networkObjs.KretprobeSysAccept, nil)
+			// Try accept4 variant
+			acceptKretprobe, err = link.Kretprobe("__x64_sys_accept4", networkObjs.KretprobeSysAccept, nil)
 			if err != nil {
-				fmt.Printf("Warning: Could not attach accept kretprobe: %v\n", err)
+				// Try alternative x86 name
+				acceptKretprobe, err = link.Kretprobe("__ia32_sys_accept", networkObjs.KretprobeSysAccept, nil)
+				if err != nil {
+					// Try raw name
+					acceptKretprobe, err = link.Kretprobe("accept", networkObjs.KretprobeSysAccept, nil)
+					if err != nil {
+						fmt.Printf("Warning: Could not attach accept kretprobe: %v\n", err)
+					} else {
+						cleanupFuncs = append(cleanupFuncs, func() { acceptKretprobe.Close() })
+					}
+				} else {
+					cleanupFuncs = append(cleanupFuncs, func() { acceptKretprobe.Close() })
+				}
 			} else {
 				cleanupFuncs = append(cleanupFuncs, func() { acceptKretprobe.Close() })
 			}
@@ -186,12 +222,18 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching bind kprobe with different syscall name formats
-		bindKprobe, err := link.Kprobe("SyS_bind", networkObjs.KprobeSysBind, nil)
+		bindKprobe, err := link.Kprobe("__x64_sys_bind", networkObjs.KprobeSysBind, nil)
 		if err != nil {
-			// Try without SyS_ prefix
-			bindKprobe, err = link.Kprobe("bind", networkObjs.KprobeSysBind, nil)
+			// Try alternative x86 name
+			bindKprobe, err = link.Kprobe("__ia32_sys_bind", networkObjs.KprobeSysBind, nil)
 			if err != nil {
-				fmt.Printf("Warning: Could not attach bind kprobe: %v\n", err)
+				// Try raw name
+				bindKprobe, err = link.Kprobe("bind", networkObjs.KprobeSysBind, nil)
+				if err != nil {
+					fmt.Printf("Warning: Could not attach bind kprobe: %v\n", err)
+				} else {
+					cleanupFuncs = append(cleanupFuncs, func() { bindKprobe.Close() })
+				}
 			} else {
 				cleanupFuncs = append(cleanupFuncs, func() { bindKprobe.Close() })
 			}
@@ -200,18 +242,25 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching bind kretprobe with different syscall name formats
-		bindKretprobe, err := link.Kretprobe("SyS_bind", networkObjs.KretprobeSysBind, nil)
+		bindKretprobe, err := link.Kretprobe("__x64_sys_bind", networkObjs.KretprobeSysBind, nil)
 		if err != nil {
-			// Try without SyS_ prefix
-			bindKretprobe, err = link.Kretprobe("bind", networkObjs.KretprobeSysBind, nil)
+			// Try alternative x86 name
+			bindKretprobe, err = link.Kretprobe("__ia32_sys_bind", networkObjs.KretprobeSysBind, nil)
 			if err != nil {
-				fmt.Printf("Warning: Could not attach bind kretprobe: %v\n", err)
+				// Try raw name
+				bindKretprobe, err = link.Kretprobe("bind", networkObjs.KretprobeSysBind, nil)
+				if err != nil {
+					fmt.Printf("Warning: Could not attach bind kretprobe: %v\n", err)
+				} else {
+					cleanupFuncs = append(cleanupFuncs, func() { bindKretprobe.Close() })
+				}
 			} else {
 				cleanupFuncs = append(cleanupFuncs, func() { bindKretprobe.Close() })
 			}
 		} else {
 			cleanupFuncs = append(cleanupFuncs, func() { bindKretprobe.Close() })
 		}
+
 	}
 
 	cleanup := func() {
