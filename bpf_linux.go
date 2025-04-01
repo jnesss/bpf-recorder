@@ -13,6 +13,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/cilium/ebpf/link"
