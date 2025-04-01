@@ -25,6 +25,9 @@ static int (*bpf_get_current_comm)(void *buf, u32 size_of_buf) = (void*) 16;
 static int (*bpf_perf_event_output)(void* ctx, void* map, u64 flags, void* data, u64 size) = (void*) 25;
 static void* (*bpf_map_lookup_elem)(void* map, const void* key) = (void*) 1;
 static int (*bpf_map_update_elem)(void *map, const void *key, const void *value, u64 flags) = (void*) 2;
+static int (*bpf_map_delete_elem)(void *map, const void *key) = (void*) 3;
+static int (*bpf_probe_read_kernel)(void *dst, u32 size, const void *unsafe_ptr) = (void*) 113; 
+static int (*bpf_probe_read_kernel_str)(void *dst, u32 size, const void *unsafe_ptr) = (void*) 115;
 
 #define BPF_ANY 0
 
@@ -33,6 +36,8 @@ static int (*bpf_map_update_elem)(void *map, const void *key, const void *value,
 
 /* Map types from bpf.h */
 #define BPF_MAP_TYPE_PERF_EVENT_ARRAY 4
+#define BPF_MAP_TYPE_HASH 1
+#define BPF_MAP_TYPE_PERCPU_ARRAY 6
 
 #ifndef NULL
 #define NULL 0
