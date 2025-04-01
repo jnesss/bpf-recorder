@@ -81,6 +81,12 @@ func InitBPF() (PerfReader, func(), error) {
 		fmt.Printf("Warning: Failed to load network BPF objects: %v\n", err)
 		fmt.Println("Continuing with process monitoring only...")
 	} else {
+		// Debugging: print all field names of networkObjs
+		t := reflect.TypeOf(networkObjs)
+		for i := 0; i < t.NumField(); i++ {
+			fmt.Printf("Field %d: %s (%s)\n", i, t.Field(i).Name, t.Field(i).Type)
+		}
+
 		// Create perf reader for network events
 		netReader, err := perf.NewReader(networkObjs.NetworkEvents, os.Getpagesize()*8)
 		if err != nil {
