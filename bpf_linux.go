@@ -20,16 +20,14 @@ import (
 	"github.com/cilium/ebpf/rlimit"
 )
 
-// perfReaderWrapper adapts the eBPF perf.Reader to our platform-agnostic PerfReader interface.
-// This wrapper allows the main application logic to remain independent of the eBPF implementation details.
+// perfReaderWrapper adapts the MultiPerfReader to our platform-agnostic PerfReader interface.
 type perfReaderWrapper struct {
-	*perf.Reader
+	reader *MultiPerfReader
 }
 
-// Read implements the PerfReader interface by converting eBPF-specific types
-// to our platform-agnostic Record type.
+// Read implements the PerfReader interface
 func (w *perfReaderWrapper) Read() (Record, error) {
-	record, err := w.Reader.Read()
+	record, err := w.reader.Read()
 	if err != nil {
 		return Record{}, err
 	}
