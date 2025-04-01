@@ -31,7 +31,7 @@ struct event_header {
 };
 
 // Enhanced event structure with inline command line
-struct event {
+struct process_event {
     // start with common header
     struct event_header header;   // 12 bytes (u64 timestamp + u32 event_type)
     
