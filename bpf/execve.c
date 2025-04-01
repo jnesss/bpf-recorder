@@ -36,14 +36,16 @@ struct bpf_map_def SEC("maps") cmdline_buffer = {
 // Handle process execution with enhanced metadata
 SEC("tracepoint/syscalls/sys_enter_execve")
 int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx) {
-    struct event event = {0};
+    struct process_event event = {0};
+    
+    // Set header fields
+    event.header.timestamp = bpf_ktime_get_ns();
+    event.header.event_type = EVENT_EXEC; // EXEC event
     
     // Basic process info
     u64 pid_tgid = bpf_get_current_pid_tgid();
     event.pid = pid_tgid >> 32;
-    event.timestamp = bpf_ktime_get_ns();
     bpf_get_current_comm(&event.comm, sizeof(event.comm));
-    event.event_type = 1; // EXEC event
     
     // Get task_struct using helper
     void *task = bpf_get_current_task();
@@ -74,7 +76,6 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     event.flags = 0;
 
     // Check if task has a valid exe_file in kernel
-    // (we already have task from earlier in the function)
     void *mm = NULL;
     bpf_probe_read(&mm, sizeof(mm), task + 2336); // kernel 6.1 mm offset
 
@@ -106,8 +107,6 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
     __builtin_memset(buffer, 0, 1024);
     
     // Fixed buffer regions for each argument with doubled sizes
-    // I know this is ugly
-    // Its the most reliable way I have found to comply with BPF verifier rules
     // Argument allocation:
     // arg0: 0-191   (192 bytes)
     // arg1: 192-351 (160 bytes)
@@ -215,13 +214,15 @@ int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx
 // Handle process exit
 SEC("tracepoint/sched/sched_process_exit")
 int tracepoint__sched__sched_process_exit(struct trace_event_raw_sched_process_template* ctx) {
-    struct event event = {0};
+    struct process_event event = {0};
+    
+    // Set header fields
+    event.header.timestamp = bpf_ktime_get_ns();
+    event.header.event_type = EVENT_EXIT; // EXIT event
     
     // Basic process info
     event.pid = bpf_get_current_pid_tgid() >> 32;
-    event.timestamp = bpf_ktime_get_ns();
     bpf_get_current_comm(&event.comm, sizeof(event.comm));
-    event.event_type = 2; // EXIT event
     
     event.exit_code = 0;
     
