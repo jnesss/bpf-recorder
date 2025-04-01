@@ -35,7 +35,7 @@ type NetworkRecord struct {
 func processNetworkEvent(netEvent NetworkEvent, collector *MetadataCollector, db *DB) error {
 	// Convert network event to a record
 	record := &NetworkRecord{
-		Timestamp:   time.Unix(0, int64(netEvent.Timestamp)),
+		Timestamp:   time.Unix(0, int64(netEvent.Header.Timestamp)), // Updated to use header.Timestamp
 		PID:         netEvent.PID,
 		PPID:        netEvent.PPID,
 		UID:         fmt.Sprintf("%d", netEvent.UID),
