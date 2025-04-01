@@ -128,7 +128,7 @@ func InitBPF() (PerfReader, func(), error) {
 	}
 
 	// Attach network kprobes if loaded successfully
-	if networkObjs.KprobesSysConnect != nil {
+	if networkObjs.KprobeSysConnect != nil {
 		// Try attaching connect kprobe with different syscall name formats
 		connectKprobe, err := link.Kprobe("SyS_connect", networkObjs.KprobeSysConnect, nil)
 		if err != nil {
@@ -147,7 +147,7 @@ func InitBPF() (PerfReader, func(), error) {
 		connectKretprobe, err := link.Kretprobe("SyS_connect", networkObjs.KretprobeSysConnect, nil)
 		if err != nil {
 			// Try without SyS_ prefix
-			connectKretprobe, err = link.Kretprobe("connect", networkObjs.KretprobesSysConnect, nil)
+			connectKretprobe, err = link.Kretprobe("connect", networkObjs.KretprobeSysConnect, nil)
 			if err != nil {
 				fmt.Printf("Warning: Could not attach connect kretprobe: %v\n", err)
 			} else {
@@ -158,10 +158,10 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching accept kprobe with different syscall name formats
-		acceptKprobe, err := link.Kprobe("SyS_accept", networkObjs.KprobesSysAccept, nil)
+		acceptKprobe, err := link.Kprobe("SyS_accept", networkObjs.KprobeSysAccept, nil)
 		if err != nil {
 			// Try without SyS_ prefix
-			acceptKprobe, err = link.Kprobe("accept", networkObjs.KprobesSysAccept, nil)
+			acceptKprobe, err = link.Kprobe("accept", networkObjs.KprobeSysAccept, nil)
 			if err != nil {
 				fmt.Printf("Warning: Could not attach accept kprobe: %v\n", err)
 			} else {
@@ -172,10 +172,10 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching accept kretprobe with different syscall name formats
-		acceptKretprobe, err := link.Kretprobe("SyS_accept", networkObjs.KretprobesSysAccept, nil)
+		acceptKretprobe, err := link.Kretprobe("SyS_accept", networkObjs.KretprobeSysAccept, nil)
 		if err != nil {
 			// Try without SyS_ prefix
-			acceptKretprobe, err = link.Kretprobe("accept", networkObjs.KretprobesSysAccept, nil)
+			acceptKretprobe, err = link.Kretprobe("accept", networkObjs.KretprobeSysAccept, nil)
 			if err != nil {
 				fmt.Printf("Warning: Could not attach accept kretprobe: %v\n", err)
 			} else {
@@ -186,10 +186,10 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching bind kprobe with different syscall name formats
-		bindKprobe, err := link.Kprobe("SyS_bind", networkObjs.KprobesSysBind, nil)
+		bindKprobe, err := link.Kprobe("SyS_bind", networkObjs.KprobeSysBind, nil)
 		if err != nil {
 			// Try without SyS_ prefix
-			bindKprobe, err = link.Kprobe("bind", networkObjs.KprobesSysBind, nil)
+			bindKprobe, err = link.Kprobe("bind", networkObjs.KprobeSysBind, nil)
 			if err != nil {
 				fmt.Printf("Warning: Could not attach bind kprobe: %v\n", err)
 			} else {
@@ -200,10 +200,10 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching bind kretprobe with different syscall name formats
-		bindKretprobe, err := link.Kretprobe("SyS_bind", networkObjs.KretprobesSysBind, nil)
+		bindKretprobe, err := link.Kretprobe("SyS_bind", networkObjs.KretprobeSysBind, nil)
 		if err != nil {
 			// Try without SyS_ prefix
-			bindKretprobe, err = link.Kretprobe("bind", networkObjs.KretprobesSysBind, nil)
+			bindKretprobe, err = link.Kretprobe("bind", networkObjs.KretprobeSysBind, nil)
 			if err != nil {
 				fmt.Printf("Warning: Could not attach bind kretprobe: %v\n", err)
 			} else {
