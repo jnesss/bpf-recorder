@@ -342,6 +342,11 @@ func startBPFReader(reader PerfReader, processEventChan chan Event, networkEvent
 			continue
 		}
 
+		// Print raw event sizes to debug
+		fmt.Printf("Raw sample size: %d bytes\n", len(record.RawSample))
+		fmt.Printf("Expected sizes - Process: %d bytes, Network: %d bytes\n",
+			int(unsafe.Sizeof(Event{})), int(unsafe.Sizeof(NetworkEvent{})))
+
 		// Try to determine event type based on size
 		eventSize := len(record.RawSample)
 		procEventSize := int(unsafe.Sizeof(Event{}))
