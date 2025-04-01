@@ -28,10 +28,16 @@ const (
 	NetProtocolUDP = 17 // Matches IPPROTO_UDP
 )
 
-// Event represents a process event from the BPF layer
-type Event struct {
-	// 8-byte aligned fields
+// EventHeader contains fields common to all event types
+type EventHeader struct {
 	Timestamp uint64
+	EventType uint32
+}
+
+// Event represents a process event from the BPF layer
+type ProcessEvent struct {
+	// Common header - must be first for type determination
+	Header EventHeader
 
 	// 4-byte aligned fields
 	PID       uint32
@@ -51,8 +57,8 @@ type Event struct {
 
 // NetworkEvent represents a network connection event from the BPF layer
 type NetworkEvent struct {
-	// 8-byte aligned fields
-	Timestamp uint64
+	// Common header - must be first for type determination
+	Header EventHeader
 
 	// 4-byte aligned fields
 	PID        uint32

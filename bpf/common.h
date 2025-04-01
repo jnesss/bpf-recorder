@@ -18,10 +18,22 @@ typedef u32 gid_t;
 // Define pid_t 
 typedef int pid_t;
 
+// Event types
+#define EVENT_EXEC     1  // Process execution
+#define EVENT_EXIT     2  // Process exit
+#define EVENT_CONNECT  3  // Network connect
+#define EVENT_ACCEPT   4  // Network accept
+#define EVENT_BIND     5  // Network bind
+
+struct event_header {
+    u64 timestamp;   // 8 bytes
+    u32 event_type;  // 4 bytes - Using the defines above
+};
+
 // Enhanced event structure with inline command line
 struct event {
-    // 8-byte aligned fields
-    u64 timestamp;   // 8 bytes
+    // start with common header
+    struct event_header header;   // 12 bytes (u64 timestamp + u32 event_type)
     
     // 4-byte aligned fields
     u32 pid;         // 4 bytes
@@ -45,8 +57,8 @@ struct event {
 
 // Network event structure for tracking connections
 struct network_event {
-    // 8-byte aligned fields
-    u64 timestamp;            // 8 bytes
+    // start with common header
+    struct event_header header;   // 12 bytes (u64 timestamp + u32 event_type)
 
     // 4-byte aligned fields
     u32 pid;                  // 4 bytes - Process ID
@@ -84,13 +96,6 @@ struct bpf_map_def {
 
 /* Map types - corresponds to enum bpf_map_type */
 #define BPF_MAP_TYPE_PERF_EVENT_ARRAY 4
-
-// Event types
-#define EVENT_EXEC     1  // Process execution
-#define EVENT_EXIT     2  // Process exit
-#define EVENT_CONNECT  3  // Network connect
-#define EVENT_ACCEPT   4  // Network accept
-#define EVENT_BIND     5  // Network bind
 
 // Network operation types
 #define NET_OPERATION_CONNECT  1
