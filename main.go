@@ -194,7 +194,7 @@ func processExecEvent(evt ProcessEvent, count int, collector *MetadataCollector,
 
 	envJSON, _ := json.Marshal(procinfo.Environment)
 	dbRecord := &ProcessRecord{
-		Timestamp:   time.Unix(0, int64(evt.Header.Timestamp)),
+		Timestamp:   time.Unix(0, int64(evt.Timestamp)),
 		PID:         evt.PID,
 		PPID:        evt.PPID,
 		Comm:        comm,
@@ -254,7 +254,7 @@ func startProcessEventProcessor(eventChan chan ProcessEvent, collector *Metadata
 	fmt.Println("Starting process event processor...")
 	processCount := 0
 	for event := range eventChan {
-		switch event.Header.EventType {
+		switch event.EventType {
 		case EventExec:
 			processCount++
 			go processExecEvent(event, processCount, collector, db, binaryCache)
@@ -342,17 +342,22 @@ func startBPFReader(reader PerfReader, processEventChan chan ProcessEvent, netwo
 			continue
 		}
 
-		// First read just the header to determine event type
-		var header EventHeader
-		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &header); err != nil {
+		type TempEventHeader struct {
+			Timestamp uint64
+			EventType uint32
+		}
+
+		// First read just the minimal header to determine event type
+		var tempHeader TempEventHeader
+		if err := binary.Read(bytes.NewReader(record.RawSample), binary.LittleEndian, &tempHeader); err != nil {
 			fmt.Printf("Error reading event header: %v\n", err)
 			continue
 		}
 
-		fmt.Printf("Received event type: %d, size: %d bytes\n", header.EventType, len(record.RawSample))
+		fmt.Printf("Received event type: %d, size: %d bytes\n", tempHeader.EventType, len(record.RawSample))
 
 		// Process based on event type
-		switch header.EventType {
+		switch tempHeader.EventType {
 		case EventExec, EventExit:
 			// Process event
 			var event ProcessEvent
@@ -377,7 +382,7 @@ func startBPFReader(reader PerfReader, processEventChan chan ProcessEvent, netwo
 
 		default:
 			// Unknown event type
-			fmt.Printf("Unknown event type: %d\n", header.EventType)
+			fmt.Printf("Unknown event type: %d\n", tempHeader.EventType)
 		}
 	}
 }

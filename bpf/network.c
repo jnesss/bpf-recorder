@@ -92,8 +92,8 @@ static __always_inline int get_socket_protocol(int sockfd) {
 
 // Common function to fill basic process information
 static __always_inline void fill_process_info(struct network_event *event) {
-    // Set header fields - timestamp and event_type will be set by the caller
-    event->header.timestamp = bpf_ktime_get_ns();
+    // Set timestamp directly
+    event->timestamp = bpf_ktime_get_ns();
     
     // Basic process info
     u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -118,7 +118,7 @@ static __always_inline void fill_process_info(struct network_event *event) {
     event->uid = uid_gid & 0xffffffff;
     event->gid = uid_gid >> 32;
     
-    // Get executable path from mm->exe_file (similar to execve.c)
+    // Get executable path from mm->exe_file
     void *mm = NULL;
     bpf_probe_read(&mm, sizeof(mm), task + 2336); // kernel 6.1 mm offset
 
@@ -156,7 +156,7 @@ int kprobe__sys_connect(struct pt_regs *ctx) {
     fill_process_info(&event);
     
     // Set the event type in the header
-    event.header.event_type = EVENT_CONNECT;
+    event.event_type = EVENT_CONNECT;
     
     // Set operation type
     event.operation = NET_OPERATION_CONNECT;
@@ -245,7 +245,7 @@ int kprobe__sys_accept(struct pt_regs *ctx) {
     fill_process_info(&event);
     
     // Set the event type in the header
-    event.header.event_type = EVENT_ACCEPT;
+    event.event_type = EVENT_ACCEPT;
     
     // Set operation type
     event.operation = NET_OPERATION_ACCEPT;
@@ -307,7 +307,7 @@ int kprobe__sys_bind(struct pt_regs *ctx) {
     fill_process_info(&event);
     
     // Set the event type in the header
-    event.header.event_type = EVENT_BIND;
+    event.event_type = EVENT_BIND;
     
     // Set operation type
     event.operation = NET_OPERATION_BIND;

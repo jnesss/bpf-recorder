@@ -38,9 +38,8 @@ SEC("tracepoint/syscalls/sys_enter_execve")
 int tracepoint__syscalls__sys_enter_execve(struct trace_event_raw_sys_enter* ctx) {
     struct process_event event = {0};
     
-    // Set header fields
-    event.header.timestamp = bpf_ktime_get_ns();
-    event.header.event_type = EVENT_EXEC; // EXEC event
+    event.timestamp = bpf_ktime_get_ns();
+    event.event_type = EVENT_EXEC; // EXEC event
     
     // Basic process info
     u64 pid_tgid = bpf_get_current_pid_tgid();
@@ -216,9 +215,8 @@ SEC("tracepoint/sched/sched_process_exit")
 int tracepoint__sched__sched_process_exit(struct trace_event_raw_sched_process_template* ctx) {
     struct process_event event = {0};
     
-    // Set header fields
-    event.header.timestamp = bpf_ktime_get_ns();
-    event.header.event_type = EVENT_EXIT; // EXIT event
+    event.timestamp = bpf_ktime_get_ns();
+    event.event_type = EVENT_EXIT; // EXIT event
     
     // Basic process info
     event.pid = bpf_get_current_pid_tgid() >> 32;

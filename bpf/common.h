@@ -25,22 +25,16 @@ typedef int pid_t;
 #define EVENT_ACCEPT   4  // Network accept
 #define EVENT_BIND     5  // Network bind
 
-struct event_header {
-    u64 timestamp;   // 8 bytes
-    u32 event_type;  // 4 bytes - Using the defines above
-};
-
 // Enhanced event structure with inline command line
 struct process_event {
-    // start with common header
-    struct event_header header;   // 12 bytes (u64 timestamp + u32 event_type)
+    u64 timestamp;   // 8 bytes
     
     // 4-byte aligned fields
+    u32 event_type;  // 4 bytes - Using the defines above
     u32 pid;         // 4 bytes
     u32 ppid;        // 4 bytes
     uid_t uid;       // 4 bytes
     gid_t gid;       // 4 bytes
-    int event_type;  // 4 bytes
     int exit_code;   // 4 bytes
     u32 flags;       // 4 bytes
     
@@ -57,10 +51,10 @@ struct process_event {
 
 // Network event structure for tracking connections
 struct network_event {
-    // start with common header
-    struct event_header header;   // 12 bytes (u64 timestamp + u32 event_type)
-
+    u64 timestamp;   // 8 bytes
+  
     // 4-byte aligned fields
+    u32 event_type;           // 4 bytes - Using the defines above
     u32 pid;                  // 4 bytes - Process ID
     u32 ppid;                 // 4 bytes - Parent process ID
     uid_t uid;                // 4 bytes - User ID
