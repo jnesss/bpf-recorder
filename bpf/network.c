@@ -92,10 +92,12 @@ static __always_inline int get_socket_protocol(int sockfd) {
 
 // Common function to fill basic process information
 static __always_inline void fill_process_info(struct network_event *event) {
+    // Set header fields - timestamp and event_type will be set by the caller
+    event->header.timestamp = bpf_ktime_get_ns();
+    
     // Basic process info
     u64 pid_tgid = bpf_get_current_pid_tgid();
     event->pid = pid_tgid >> 32;
-    event->timestamp = bpf_ktime_get_ns();
     bpf_get_current_comm(&event->comm, sizeof(event->comm));
     
     // Get task_struct using helper
@@ -152,6 +154,9 @@ int kprobe__sys_connect(struct pt_regs *ctx) {
     
     // Fill basic process info
     fill_process_info(&event);
+    
+    // Set the event type in the header
+    event.header.event_type = EVENT_CONNECT;
     
     // Set operation type
     event.operation = NET_OPERATION_CONNECT;
@@ -239,6 +244,9 @@ int kprobe__sys_accept(struct pt_regs *ctx) {
     // Fill basic process info
     fill_process_info(&event);
     
+    // Set the event type in the header
+    event.header.event_type = EVENT_ACCEPT;
+    
     // Set operation type
     event.operation = NET_OPERATION_ACCEPT;
     
@@ -297,6 +305,9 @@ int kprobe__sys_bind(struct pt_regs *ctx) {
     
     // Fill basic process info
     fill_process_info(&event);
+    
+    // Set the event type in the header
+    event.header.event_type = EVENT_BIND;
     
     // Set operation type
     event.operation = NET_OPERATION_BIND;
