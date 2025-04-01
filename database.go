@@ -60,6 +60,12 @@ func NewDB(dataDir string) (*DB, error) {
 		return nil, fmt.Errorf("failed to initialize schema: %v", err)
 	}
 
+	fmt.Println("Initializing network schema...")
+	if err := initNetworkSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to initialize network schema: %v", err)
+	}
+
 	fmt.Println("Initializing Sigma detector state schema...")
 	if err := initSigmaSchema(db); err != nil {
 		db.Close()
@@ -106,6 +112,55 @@ func initProcessSchema(db *sql.DB) error {
 	for _, idx := range indexes {
 		if _, err := db.Exec(idx); err != nil {
 			return fmt.Errorf("failed to create index: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// initNetworkSchema creates the database tables for network connection events
+func initNetworkSchema(db *sql.DB) error {
+	fmt.Println("Creating network_connections table if it doesn't exist...")
+	schema := `
+	CREATE TABLE IF NOT EXISTS network_connections (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp    DATETIME NOT NULL,
+		pid          INTEGER NOT NULL,
+		ppid         INTEGER NOT NULL,
+		process_name TEXT NOT NULL,
+		exe_path     TEXT,
+		parent_name  TEXT,
+		src_addr     TEXT,
+		src_port     INTEGER,
+		dst_addr     TEXT,
+		dst_port     INTEGER,
+		protocol     TEXT,
+		ip_version   INTEGER,
+		operation    TEXT,
+		return_code  INTEGER,
+		success      INTEGER,
+		username     TEXT,
+		uid          TEXT,
+		gid          TEXT,
+		container_id TEXT
+	);`
+
+	if _, err := db.Exec(schema); err != nil {
+		return fmt.Errorf("failed to create network table: %v", err)
+	}
+
+	fmt.Println("Creating network indexes...")
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_net_pid ON network_connections(pid);",
+		"CREATE INDEX IF NOT EXISTS idx_net_timestamp ON network_connections(timestamp);",
+		"CREATE INDEX IF NOT EXISTS idx_net_dst ON network_connections(dst_addr, dst_port);",
+		"CREATE INDEX IF NOT EXISTS idx_net_protocol ON network_connections(protocol);",
+		"CREATE INDEX IF NOT EXISTS idx_net_operation ON network_connections(operation);",
+	}
+
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create network index: %v", err)
 		}
 	}
 
@@ -191,6 +246,48 @@ func (db *DB) InsertProcess(record *ProcessRecord) error {
 	id, _ := result.LastInsertId()
 	fmt.Printf("+ ") // Simple visual indicator of insertion
 	if id%20 == 0 {  // New line every 20 processes
+		fmt.Println()
+	}
+	return nil
+}
+
+// InsertNetworkConnection adds a network connection record to the database
+func (db *DB) InsertNetworkConnection(record *NetworkRecord) error {
+	query := `
+		INSERT INTO network_connections (
+			timestamp, pid, ppid, process_name, exe_path, parent_name,
+			src_addr, src_port, dst_addr, dst_port, protocol, ip_version,
+			operation, return_code, success, username, uid, gid, container_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	result, err := db.db.Exec(query,
+		record.Timestamp,
+		record.PID,
+		record.PPID,
+		record.ProcessName,
+		record.ExePath,
+		record.ParentName,
+		record.SrcAddr,
+		record.SrcPort,
+		record.DstAddr,
+		record.DstPort,
+		record.Protocol,
+		record.IPVersion,
+		record.Operation,
+		record.ReturnCode,
+		record.Success,
+		record.Username,
+		record.UID,
+		record.GID,
+		record.ContainerID,
+	)
+	if err != nil {
+		return err
+	}
+
+	id, _ := result.LastInsertId()
+	fmt.Printf("n ") // Network insertion indicator
+	if id%20 == 0 {  // New line every 20 connections
 		fmt.Println()
 	}
 	return nil
