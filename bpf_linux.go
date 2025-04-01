@@ -39,6 +39,11 @@ func (w *perfReaderWrapper) Read() (Record, error) {
 	}, nil
 }
 
+// Close implements the PerfReader interface for cleanup
+func (w *perfReaderWrapper) Close() error {
+	return w.reader.Close()
+}
+
 var (
 	execveObjs    execveObjects
 	networkObjs   networkObjects
@@ -119,50 +124,86 @@ func InitBPF() (PerfReader, func(), error) {
 
 	// Attach network kprobes if loaded successfully
 	if networkObjs.KprobesSysConnect != nil {
-		// Attach connect kprobe
-		connectKprobe, err := link.Kprobe("sys_connect", networkObjs.KprobesSysConnect, nil)
+		// Try attaching connect kprobe with different syscall name formats
+		connectKprobe, err := link.Kprobe("SyS_connect", networkObjs.KprobesSysConnect, nil)
 		if err != nil {
-			fmt.Printf("Warning: Could not attach connect kprobe: %v\n", err)
+			// Try without SyS_ prefix
+			connectKprobe, err = link.Kprobe("connect", networkObjs.KprobesSysConnect, nil)
+			if err != nil {
+				fmt.Printf("Warning: Could not attach connect kprobe: %v\n", err)
+			} else {
+				cleanupFuncs = append(cleanupFuncs, func() { connectKprobe.Close() })
+			}
 		} else {
 			cleanupFuncs = append(cleanupFuncs, func() { connectKprobe.Close() })
 		}
 
-		// Attach connect kretprobe
-		connectKretprobe, err := link.Kretprobe("sys_connect", networkObjs.KretprobesSysConnect, nil)
+		// Try attaching connect kretprobe with different syscall name formats
+		connectKretprobe, err := link.Kretprobe("SyS_connect", networkObjs.KretprobesSysConnect, nil)
 		if err != nil {
-			fmt.Printf("Warning: Could not attach connect kretprobe: %v\n", err)
+			// Try without SyS_ prefix
+			connectKretprobe, err = link.Kretprobe("connect", networkObjs.KretprobesSysConnect, nil)
+			if err != nil {
+				fmt.Printf("Warning: Could not attach connect kretprobe: %v\n", err)
+			} else {
+				cleanupFuncs = append(cleanupFuncs, func() { connectKretprobe.Close() })
+			}
 		} else {
 			cleanupFuncs = append(cleanupFuncs, func() { connectKretprobe.Close() })
 		}
 
-		// Attach accept kprobe
-		acceptKprobe, err := link.Kprobe("sys_accept", networkObjs.KprobesSysAccept, nil)
+		// Try attaching accept kprobe with different syscall name formats
+		acceptKprobe, err := link.Kprobe("SyS_accept", networkObjs.KprobesSysAccept, nil)
 		if err != nil {
-			fmt.Printf("Warning: Could not attach accept kprobe: %v\n", err)
+			// Try without SyS_ prefix
+			acceptKprobe, err = link.Kprobe("accept", networkObjs.KprobesSysAccept, nil)
+			if err != nil {
+				fmt.Printf("Warning: Could not attach accept kprobe: %v\n", err)
+			} else {
+				cleanupFuncs = append(cleanupFuncs, func() { acceptKprobe.Close() })
+			}
 		} else {
 			cleanupFuncs = append(cleanupFuncs, func() { acceptKprobe.Close() })
 		}
 
-		// Attach accept kretprobe
-		acceptKretprobe, err := link.Kretprobe("sys_accept", networkObjs.KretprobesSysAccept, nil)
+		// Try attaching accept kretprobe with different syscall name formats
+		acceptKretprobe, err := link.Kretprobe("SyS_accept", networkObjs.KretprobesSysAccept, nil)
 		if err != nil {
-			fmt.Printf("Warning: Could not attach accept kretprobe: %v\n", err)
+			// Try without SyS_ prefix
+			acceptKretprobe, err = link.Kretprobe("accept", networkObjs.KretprobesSysAccept, nil)
+			if err != nil {
+				fmt.Printf("Warning: Could not attach accept kretprobe: %v\n", err)
+			} else {
+				cleanupFuncs = append(cleanupFuncs, func() { acceptKretprobe.Close() })
+			}
 		} else {
 			cleanupFuncs = append(cleanupFuncs, func() { acceptKretprobe.Close() })
 		}
 
-		// Attach bind kprobe
-		bindKprobe, err := link.Kprobe("sys_bind", networkObjs.KprobesSysBind, nil)
+		// Try attaching bind kprobe with different syscall name formats
+		bindKprobe, err := link.Kprobe("SyS_bind", networkObjs.KprobesSysBind, nil)
 		if err != nil {
-			fmt.Printf("Warning: Could not attach bind kprobe: %v\n", err)
+			// Try without SyS_ prefix
+			bindKprobe, err = link.Kprobe("bind", networkObjs.KprobesSysBind, nil)
+			if err != nil {
+				fmt.Printf("Warning: Could not attach bind kprobe: %v\n", err)
+			} else {
+				cleanupFuncs = append(cleanupFuncs, func() { bindKprobe.Close() })
+			}
 		} else {
 			cleanupFuncs = append(cleanupFuncs, func() { bindKprobe.Close() })
 		}
 
-		// Attach bind kretprobe
-		bindKretprobe, err := link.Kretprobe("sys_bind", networkObjs.KretprobesSysBind, nil)
+		// Try attaching bind kretprobe with different syscall name formats
+		bindKretprobe, err := link.Kretprobe("SyS_bind", networkObjs.KretprobesSysBind, nil)
 		if err != nil {
-			fmt.Printf("Warning: Could not attach bind kretprobe: %v\n", err)
+			// Try without SyS_ prefix
+			bindKretprobe, err = link.Kretprobe("bind", networkObjs.KretprobesSysBind, nil)
+			if err != nil {
+				fmt.Printf("Warning: Could not attach bind kretprobe: %v\n", err)
+			} else {
+				cleanupFuncs = append(cleanupFuncs, func() { bindKretprobe.Close() })
+			}
 		} else {
 			cleanupFuncs = append(cleanupFuncs, func() { bindKretprobe.Close() })
 		}
@@ -175,7 +216,7 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 	}
 
-	// Create a multi-reader wrapper to handle multiple perf buffers
+	// Create a multi-reader to handle both process and network events
 	multiReader := newMultiPerfReader(readers)
 
 	return &perfReaderWrapper{multiReader}, cleanup, nil
@@ -184,16 +225,60 @@ func InitBPF() (PerfReader, func(), error) {
 // MultiPerfReader handles reading from multiple perf buffers
 type MultiPerfReader struct {
 	readers []*perf.Reader
+	eventCh chan perf.Record
+	errCh   chan error
+	done    chan struct{}
 }
 
-func newMultiPerfReader(readers []*perf.Reader) *perf.Reader {
-	// For simplicity, we'll just return the first reader
-	// In a more sophisticated implementation, you might:
-	// 1. Create a custom reader that multiplexes between multiple perf readers
-	// 2. Use channels to coordinate reading from multiple sources
-	// 3. Use polling to efficiently monitor multiple perf buffers
-	if len(readers) > 0 {
-		return readers[0]
+func newMultiPerfReader(readers []*perf.Reader) *MultiPerfReader {
+	mr := &MultiPerfReader{
+		readers: readers,
+		eventCh: make(chan perf.Record, 10),
+		errCh:   make(chan error, 1),
+		done:    make(chan struct{}),
+	}
+
+	// Start goroutines to read from each reader
+	for i, reader := range readers {
+		go func(idx int, r *perf.Reader) {
+			fmt.Printf("Starting perf reader %d\n", idx)
+			for {
+				select {
+				case <-mr.done:
+					return
+				default:
+					record, err := r.Read()
+					if err != nil {
+						if !strings.Contains(err.Error(), "closed") {
+							fmt.Printf("Reader %d error: %v\n", idx, err)
+						}
+						mr.errCh <- err
+						return
+					}
+					mr.eventCh <- record
+				}
+			}
+		}(i, reader)
+	}
+
+	return mr
+}
+
+// Read implements the perf.Reader interface for MultiPerfReader
+func (mr *MultiPerfReader) Read() (perf.Record, error) {
+	select {
+	case record := <-mr.eventCh:
+		return record, nil
+	case err := <-mr.errCh:
+		return perf.Record{}, err
+	}
+}
+
+// Close implements the perf.Reader interface for MultiPerfReader
+func (mr *MultiPerfReader) Close() error {
+	close(mr.done)
+	for _, reader := range mr.readers {
+		reader.Close()
 	}
 	return nil
 }
