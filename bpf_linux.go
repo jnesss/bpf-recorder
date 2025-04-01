@@ -123,10 +123,10 @@ func InitBPF() (PerfReader, func(), error) {
 	// Attach network kprobes if loaded successfully
 	if networkObjs.KprobesSysConnect != nil {
 		// Try attaching connect kprobe with different syscall name formats
-		connectKprobe, err := link.Kprobe("SyS_connect", networkObjs.KprobesSysConnect, nil)
+		connectKprobe, err := link.Kprobe("SyS_connect", networkObjs.KprobeSysConnect, nil)
 		if err != nil {
 			// Try without SyS_ prefix
-			connectKprobe, err = link.Kprobe("connect", networkObjs.KprobesSysConnect, nil)
+			connectKprobe, err = link.Kprobe("connect", networkObjs.KprobeSysConnect, nil)
 			if err != nil {
 				fmt.Printf("Warning: Could not attach connect kprobe: %v\n", err)
 			} else {
@@ -137,7 +137,7 @@ func InitBPF() (PerfReader, func(), error) {
 		}
 
 		// Try attaching connect kretprobe with different syscall name formats
-		connectKretprobe, err := link.Kretprobe("SyS_connect", networkObjs.KretprobesSysConnect, nil)
+		connectKretprobe, err := link.Kretprobe("SyS_connect", networkObjs.KretprobeSysConnect, nil)
 		if err != nil {
 			// Try without SyS_ prefix
 			connectKretprobe, err = link.Kretprobe("connect", networkObjs.KretprobesSysConnect, nil)
