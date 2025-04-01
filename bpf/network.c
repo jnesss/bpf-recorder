@@ -138,7 +138,7 @@ static __always_inline void fill_process_info(struct network_event *event) {
 }
 
 // kprobe for connect() syscall entry
-SEC("kprobe/sys_connect")
+SEC("kprobe/SyS_connect")
 int kprobe__sys_connect(struct pt_regs *ctx) {
     int sockfd = (int)PT_REGS_PARM1(ctx);
     struct sockaddr *addr = (struct sockaddr *)PT_REGS_PARM2(ctx);
@@ -197,7 +197,7 @@ int kprobe__sys_connect(struct pt_regs *ctx) {
 }
 
 // kretprobe for connect() syscall return
-SEC("kretprobe/sys_connect")
+SEC("kretprobe/SyS_connect")
 int kretprobe__sys_connect(struct pt_regs *ctx) {
     // Get return value
     int ret = PT_REGS_RC(ctx);
@@ -223,7 +223,7 @@ int kretprobe__sys_connect(struct pt_regs *ctx) {
 }
 
 // kprobe for accept() and accept4() syscalls
-SEC("kprobe/sys_accept")
+SEC("kprobe/SyS_accept")
 int kprobe__sys_accept(struct pt_regs *ctx) {
     // Similar to connect but for inbound connections
     int sockfd = (int)PT_REGS_PARM1(ctx);
@@ -250,7 +250,7 @@ int kprobe__sys_accept(struct pt_regs *ctx) {
 }
 
 // kretprobe for accept() syscall
-SEC("kretprobe/sys_accept")
+SEC("kretprobe/SyS_accept")
 int kretprobe__sys_accept(struct pt_regs *ctx) {
     // Get return value (the new socket fd)
     int sockfd = PT_REGS_RC(ctx);
@@ -283,7 +283,7 @@ int kretprobe__sys_accept(struct pt_regs *ctx) {
 }
 
 // kprobe for bind() syscall
-SEC("kprobe/sys_bind")
+SEC("kprobe/SyS_bind")
 int kprobe__sys_bind(struct pt_regs *ctx) {
     int sockfd = (int)PT_REGS_PARM1(ctx);
     struct sockaddr *addr = (struct sockaddr *)PT_REGS_PARM2(ctx);
@@ -334,7 +334,7 @@ int kprobe__sys_bind(struct pt_regs *ctx) {
 }
 
 // kretprobe for bind() syscall return
-SEC("kretprobe/sys_bind")
+SEC("kretprobe/SyS_bind")
 int kretprobe__sys_bind(struct pt_regs *ctx) {
     // Get return value
     int ret = PT_REGS_RC(ctx);
