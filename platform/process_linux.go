@@ -1,3 +1,6 @@
+// platform/process_linux.go
+//go:build linux
+
 package platform
 
 import (
