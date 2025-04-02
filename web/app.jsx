@@ -1,5 +1,3 @@
-console.log('APP.JSX LOADED - VERSION 12 (PERFECT TREE)');
-
 const { useState, useEffect, useRef, useCallback } = React;
 
 // Simple SVG icons

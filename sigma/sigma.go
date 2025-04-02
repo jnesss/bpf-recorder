@@ -1,4 +1,4 @@
-package main
+package sigma 
 
 import (
 	"context"
@@ -17,9 +17,9 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// SigmaDetector manages Sigma rules and detection
-type SigmaDetector struct {
-	rulesDir   string
+// Detector manages Sigma rules and detection
+type Detector struct {
+	RulesDir   string
 	db         *sql.DB
 	evaluators map[string]*evaluator.RuleEvaluator
 	running    bool
@@ -73,15 +73,15 @@ func createHardcodedConfig() sigma.Config {
 }
 
 // NewSigmaDetector creates a new Sigma detector
-func NewSigmaDetector(rulesDir string, db *sql.DB) (*SigmaDetector, error) {
+func NewDetector(rulesDir string, db *sql.DB) (*Detector, error) {
 	// Create watcher
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file watcher: %v", err)
 	}
 
-	detector := &SigmaDetector{
-		rulesDir:   rulesDir,
+	detector := &Detector{
+		RulesDir:   rulesDir,
 		db:         db,
 		evaluators: make(map[string]*evaluator.RuleEvaluator),
 		running:    false,
@@ -118,9 +118,9 @@ func NewSigmaDetector(rulesDir string, db *sql.DB) (*SigmaDetector, error) {
 }
 
 // Add a new method to set up the file watcher
-func (sd *SigmaDetector) setupWatcher() error {
+func (sd *Detector) setupWatcher() error {
 	// watch the enabled directory (changes dont matter in disabled_rules dir)
-	enabledDir := filepath.Join(sd.rulesDir, "enabled_rules")
+	enabledDir := filepath.Join(sd.RulesDir, "enabled_rules")
 
 	if err := sd.watcher.Add(enabledDir); err != nil {
 		return fmt.Errorf("failed to watch directory %s: %v", enabledDir, err)
@@ -134,7 +134,7 @@ func (sd *SigmaDetector) setupWatcher() error {
 }
 
 // Add a method to handle file change events
-func (sd *SigmaDetector) watchFileChanges() {
+func (sd *Detector) watchFileChanges() {
 	for {
 		select {
 		case event, ok := <-sd.watcher.Events:
@@ -166,7 +166,7 @@ func (sd *SigmaDetector) watchFileChanges() {
 }
 
 // Add a new method to load rules with the hardcoded config
-func (sd *SigmaDetector) LoadRulesWithConfig(rulesDir string, config sigma.Config) error {
+func (sd *Detector) LoadRulesWithConfig(rulesDir string, config sigma.Config) error {
 	// Clear existing evaluators
 	sd.evaluators = make(map[string]*evaluator.RuleEvaluator)
 
@@ -228,12 +228,12 @@ func (sd *SigmaDetector) LoadRulesWithConfig(rulesDir string, config sigma.Confi
 
 // LoadRules loads all Sigma rules from the rules directory
 // Modify your LoadRules function to load from enabled_rules
-func (sd *SigmaDetector) LoadRules() error {
+func (sd *Detector) LoadRules() error {
 	// Clear existing evaluators
 	sd.evaluators = make(map[string]*evaluator.RuleEvaluator)
 
 	// Get path to enabled rules directory
-	enabledDir := filepath.Join(sd.rulesDir, "enabled_rules")
+	enabledDir := filepath.Join(sd.RulesDir, "enabled_rules")
 
 	// Create directory if it doesn't exist
 	if _, err := os.Stat(enabledDir); os.IsNotExist(err) {
@@ -264,7 +264,7 @@ func (sd *SigmaDetector) LoadRules() error {
 	return nil
 }
 
-func (sd *SigmaDetector) ReloadRules() {
+func (sd *Detector) ReloadRules() {
 	select {
 	case sd.reloadChan <- true:
 		// Signal sent successfully
@@ -274,7 +274,7 @@ func (sd *SigmaDetector) ReloadRules() {
 }
 
 // LoadRuleFile loads a single rule file
-func (sd *SigmaDetector) LoadRuleFile(filePath string) error {
+func (sd *Detector) LoadRuleFile(filePath string) error {
 	content, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		return err
@@ -322,7 +322,7 @@ func (sd *SigmaDetector) LoadRuleFile(filePath string) error {
 }
 
 // GetLastProcessedID gets the last processed ID for an event type
-func (sd *SigmaDetector) GetLastProcessedID(eventType string) (int64, error) {
+func (sd *Detector) GetLastProcessedID(eventType string) (int64, error) {
 	query := `SELECT last_id FROM detector_state WHERE event_type = ? LIMIT 1`
 
 	var lastID int64
@@ -349,7 +349,7 @@ func (sd *SigmaDetector) GetLastProcessedID(eventType string) (int64, error) {
 }
 
 // UpdateDetectorState updates the state for an event type
-func (sd *SigmaDetector) UpdateDetectorState(eventType string, lastID int64, matchCount int) error {
+func (sd *Detector) UpdateDetectorState(eventType string, lastID int64, matchCount int) error {
 	query := `
 	UPDATE detector_state SET 
 		last_id = ?,
@@ -363,7 +363,7 @@ func (sd *SigmaDetector) UpdateDetectorState(eventType string, lastID int64, mat
 }
 
 // CheckEvent checks if an event matches any Sigma rules and returns detailed match results
-func (sd *SigmaDetector) CheckEvent(ctx context.Context, event map[string]interface{}, eventType string) []MatchResult {
+func (sd *Detector) CheckEvent(ctx context.Context, event map[string]interface{}, eventType string) []MatchResult {
 	var results []MatchResult
 
 	for _, ruleEvaluator := range sd.evaluators {
@@ -400,7 +400,7 @@ func (sd *SigmaDetector) CheckEvent(ctx context.Context, event map[string]interf
 }
 
 // StoreMatch stores a rule match in the database
-func (sd *SigmaDetector) StoreMatch(match MatchResult, event map[string]interface{}, eventType string) error {
+func (sd *Detector) StoreMatch(match MatchResult, event map[string]interface{}, eventType string) error {
 	// Convert event data to JSON
 	eventDataJSON, err := json.Marshal(event)
 	if err != nil {
@@ -506,7 +506,7 @@ func (sd *SigmaDetector) StoreMatch(match MatchResult, event map[string]interfac
 }
 
 // StartPolling starts polling for all event types
-func (sd *SigmaDetector) StartPolling(interval time.Duration) error {
+func (sd *Detector) StartPolling(interval time.Duration) error {
 	if sd.running {
 		return fmt.Errorf("detector is already running")
 	}
@@ -597,7 +597,7 @@ func (sd *SigmaDetector) StartPolling(interval time.Duration) error {
 }
 
 // StopPolling stops the polling
-func (sd *SigmaDetector) StopPolling() {
+func (sd *Detector) StopPolling() {
 	sd.running = false
 	if sd.watcher != nil {
 		sd.watcher.Close() // Close the watcher
@@ -607,7 +607,7 @@ func (sd *SigmaDetector) StopPolling() {
 }
 
 // FetchNewEvents fetches new events of a specific type
-func (sd *SigmaDetector) FetchNewEvents(eventType string, lastID int64) ([]map[string]interface{}, error) {
+func (sd *Detector) FetchNewEvents(eventType string, lastID int64) ([]map[string]interface{}, error) {
 	var query string
 
 	switch eventType {
@@ -615,10 +615,10 @@ func (sd *SigmaDetector) FetchNewEvents(eventType string, lastID int64) ([]map[s
 		query = `
 		SELECT 
 			p.id, 
-			p.comm as Image, 
+			p.exe_path as Image, 
 			p.cmdline as CommandLine, 
 			pp.comm as ParentImage, 
-			pp.cmdline as ParentCommandLine, 
+			pp.exe_path as ParentCommandLine, 
 			p.username as User, 
 			p.username as Username, 
 			p.working_dir as CurrentDirectory, 
@@ -740,7 +740,7 @@ func (sd *SigmaDetector) FetchNewEvents(eventType string, lastID int64) ([]map[s
 }
 
 // GetMatches retrieves sigma matches from the database with filters
-func (sd *SigmaDetector) GetMatches(limit int, offset int, filters map[string]string) ([]SigmaMatch, error) {
+func (sd *Detector) GetMatches(limit int, offset int, filters map[string]string) ([]SigmaMatch, error) {
 	query := `
     SELECT 
         id, event_id, event_type, rule_id, rule_name, 
@@ -815,7 +815,7 @@ func (sd *SigmaDetector) GetMatches(limit int, offset int, filters map[string]st
 }
 
 // GetMatchStats retrieves statistics about sigma matches
-func (sd *SigmaDetector) GetMatchStats() (map[string]interface{}, error) {
+func (sd *Detector) GetMatchStats() (map[string]interface{}, error) {
 	// Get total rules count
 	var totalRules int
 	err := sd.db.QueryRow("SELECT COUNT(*) FROM (SELECT DISTINCT rule_id FROM sigma_matches)").Scan(&totalRules)
@@ -884,7 +884,7 @@ func (sd *SigmaDetector) GetMatchStats() (map[string]interface{}, error) {
 }
 
 // UpdateMatchStatus updates the status of a match
-func (sd *SigmaDetector) UpdateMatchStatus(matchID int64, newStatus string) error {
+func (sd *Detector) UpdateMatchStatus(matchID int64, newStatus string) error {
 	// Validate status
 	validStatuses := map[string]bool{
 		"new":            true,
@@ -905,3 +905,4 @@ func (sd *SigmaDetector) UpdateMatchStatus(matchID int64, newStatus string) erro
 
 	return err
 }
+

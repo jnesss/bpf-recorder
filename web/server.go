@@ -1,115 +1,93 @@
-package main
+package web
 
 import (
-	"database/sql"
-	"encoding/json"
-	"fmt"
-	"html/template"
-	"io/ioutil"
-	"net/http"
-	"os"
-	"path/filepath"
-	"strconv"
-	"strings"
-	"time"
+    "database/sql"
+    "encoding/json"
+    "fmt"
+    "html/template"
+    "io/ioutil"
+    "net/http"
+    "os"
+    "path/filepath"
+    "strconv"
+    "strings"
+    "time"
 
-	"github.com/bradleyjkemp/sigma-go"
+    sigmago "github.com/bradleyjkemp/sigma-go"
+
+    "bpf-recorder/binary"
+    "bpf-recorder/sigma"
 )
 
-type ProcessRow struct {
-	ID          int64     `json:"id"`
-	Timestamp   time.Time `json:"timestamp"`
-	PID         uint32    `json:"pid"`
-	PPID        uint32    `json:"ppid"`
-	Comm        string    `json:"comm"`
-	CmdLine     string    `json:"cmdline"`
-	ExePath     string    `json:"exePath"`
-	WorkingDir  string    `json:"workingDir"`
-	Username    string    `json:"username"`
-	ParentComm  string    `json:"parentComm"`
-	Environment string    `json:"environment"`
-	ContainerID string    `json:"containerId"`
-	BinaryMD5   string    `json:"binaryMd5"`
+type Server struct {
+    db            *sql.DB
+    sigmaDetector *sigma.Detector
+    binaryCache   *binary.Cache
+    listenAddr    string
 }
 
-func startWebServer(db *DB, sigmaDetector *SigmaDetector, binaryCache *BinaryCache) error {
-	// Debug handler that wraps other handlers and logs request details
-	debugHandler := func(h http.HandlerFunc) http.HandlerFunc {
-		return func(w http.ResponseWriter, r *http.Request) {
-			fmt.Printf("[%s] %s %s\n", time.Now().Format("15:04:05"), r.Method, r.URL.Path)
-			h(w, r)
-		}
-	}
+func NewServer(db *sql.DB, sigmaDetector *sigma.Detector, binaryCache *binary.Cache, listenAddr string) *Server {
+    return &Server{
+        db:            db,
+        sigmaDetector: sigmaDetector,
+        binaryCache:   binaryCache,
+        listenAddr:    listenAddr,
+    }
+}
 
-	// Register routes
-	http.HandleFunc("/", debugHandler(handleIndex))
-	http.HandleFunc("/app.jsx", debugHandler(handleAppJSX))
-	http.HandleFunc("/api/processes", debugHandler(handleProcesses(db)))
-	http.HandleFunc("/api/binaries", debugHandler(handleBinaries(binaryCache)))
+func (s *Server) Start() error {
+    // Debug handler that wraps other handlers and logs request details
+    debugHandler := func(h http.HandlerFunc) http.HandlerFunc {
+        return func(w http.ResponseWriter, r *http.Request) {
+            fmt.Printf("[%s] %s %s\n", time.Now().Format("15:04:05"), r.Method, r.URL.Path)
+            h(w, r)
+        }
+    }
 
-	// Add these to your startWebServer function
-	if sigmaDetector != nil {
-		http.HandleFunc("/api/sigma/rules", debugHandler(handleSigmaRules(sigmaDetector)))
-		http.HandleFunc("/api/sigma/rules/toggle/", debugHandler(handleSigmaRuleToggle(sigmaDetector)))
-		http.HandleFunc("/api/sigma/rules/upload", debugHandler(handleSigmaRuleUpload(sigmaDetector)))
-		http.HandleFunc("/api/sigma/matches", debugHandler(handleSigmaMatchesList(sigmaDetector)))
-		http.HandleFunc("/api/sigma/matches/", debugHandler(handleSigmaMatchOperation(sigmaDetector)))
+    // Register routes
+    http.HandleFunc("/", debugHandler(s.handleIndex))
+    http.HandleFunc("/app.jsx", debugHandler(s.handleAppJSX))
+    http.HandleFunc("/api/processes", debugHandler(s.handleProcesses))
+    http.HandleFunc("/api/binaries", debugHandler(s.handleBinaries))
 
-		// http.HandleFunc("/api/sigma/matches", debugHandler(handleSigmaMatches(sigmaDetector)))
-		// http.HandleFunc("/api/sigma/matches/", debugHandler(handleUpdateMatchStatus(sigmaDetector)))
-	}
+    // Add Sigma routes if detector is available
+    if s.sigmaDetector != nil {
+        http.HandleFunc("/api/sigma/rules", debugHandler(s.handleSigmaRules))
+        http.HandleFunc("/api/sigma/rules/toggle/", debugHandler(s.handleSigmaRuleToggle))
+        http.HandleFunc("/api/sigma/rules/upload", debugHandler(s.handleSigmaRuleUpload))
+        http.HandleFunc("/api/sigma/matches", debugHandler(s.handleSigmaMatchesList))
+        http.HandleFunc("/api/sigma/matches/", debugHandler(s.handleSigmaMatchOperation))
+    }
 
-	fmt.Printf("Starting web server on :8080\n")
-	return http.ListenAndServe(":8080", nil)
+    fmt.Printf("Starting web server on %s\n", s.listenAddr)
+    return http.ListenAndServe(s.listenAddr, nil)
+}
+
+func (s *Server) Stop() error {
+    // Nothing to do yet, but interface allows for future cleanup
+    return nil
 }
 
 // handleIndex serves the main HTML page
-func handleIndex(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("Serving index.html for path: %s\n", r.URL.Path)
-	w.Header().Set("Content-Type", "text/html")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
+    fmt.Printf("Serving index.html for path: %s\n", r.URL.Path)
+    w.Header().Set("Content-Type", "text/html")
+    w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 
-	tmpl := template.Must(template.New("index").Parse(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>BPF Process Monitor</title>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1">
-            <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
-            <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
-            <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
-            <script src="https://cdn.tailwindcss.com"></script>
-        </head>
-        <body>
-            <div id="root"></div>
-            <script type="text/babel" src="/app.jsx"></script>
-        </body>
-        </html>`))
-	if err := tmpl.Execute(w, nil); err != nil {
-		fmt.Printf("Error executing template: %v\n", err)
-	}
+    tmpl := template.Must(template.New("index").Parse(indexTemplate))
+    if err := tmpl.Execute(w, nil); err != nil {
+        fmt.Printf("Error executing template: %v\n", err)
+    }
 }
 
 // handleAppJSX serves the React component code
-func handleAppJSX(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("DEBUG: Attempting to serve app.jsx from web directory\n")
-	jsxPath := filepath.Join("web", "app.jsx")
-
-	// Check if file exists and get its info
-	if info, err := os.Stat(jsxPath); err == nil {
-		fmt.Printf("DEBUG: Found app.jsx, size: %d, modified: %s\n", info.Size(), info.ModTime())
-	} else {
-		fmt.Printf("DEBUG: Error checking app.jsx: %v\n", err)
-	}
-
-	w.Header().Set("Content-Type", "application/javascript")
-	http.ServeFile(w, r, jsxPath)
+func (s *Server) handleAppJSX(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/javascript")
+    http.ServeFile(w, r, filepath.Join("web", "app.jsx"))
 }
 
-// handleProcesses handles requests for process data
-func handleProcesses(db *DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// handleProcesses returns an http.HandlerFunc for process-related requests
+func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Fetching process data from database\n")
 
 		// Check if a specific PID was requested for the process tree
@@ -117,30 +95,30 @@ func handleProcesses(db *DB) http.HandlerFunc {
 		idParam := r.URL.Query().Get("id") // Added parameter for table ID
 
 		if pidParam != "" {
-			handleProcessTree(w, r, db, pidParam)
+			s.handleProcessTree(w, r, pidParam)
 			return
 		}
 
 		// If a specific ID was requested
 		if idParam != "" {
-			handleProcessById(w, r, db, idParam)
+			s.handleProcessById(w, r, idParam)
 			return
 		}
 
 		// Default: fetch recent processes
-		handleRecentProcesses(w, r, db)
-	}
+		s.handleRecentProcesses(w, r)
 }
 
+
 // handleProcessTree handles fetching a process tree for a specific PID
-func handleProcessTree(w http.ResponseWriter, r *http.Request, db *DB, pidParam string) {
+func (s *Server) handleProcessTree(w http.ResponseWriter, r *http.Request, pidParam string) {
 	pid, err := strconv.Atoi(pidParam)
 	if err != nil {
 		http.Error(w, "Invalid PID", 400)
 		return
 	}
 
-	processes, err := fetchProcessTree(db, uint32(pid))
+	processes, err := s.fetchProcessTree(uint32(pid))
 	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -150,8 +128,8 @@ func handleProcessTree(w http.ResponseWriter, r *http.Request, db *DB, pidParam 
 	json.NewEncoder(w).Encode(processes)
 }
 
-// handleProcessById handles fetching a process by its database ID and surrounding context
-func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam string) {
+// handleProcessById handles fetching a process by its database ID
+func (s *Server) handleProcessById(w http.ResponseWriter, r *http.Request, idParam string) {
 	id, err := strconv.ParseInt(idParam, 10, 64)
 	if err != nil {
 		http.Error(w, "Invalid ID", 400)
@@ -160,11 +138,10 @@ func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam s
 
 	//  get processes around this ID
 	query := `
-        SELECT 
+        SELECT
             id, timestamp, pid, ppid, comm, cmdline, exe_path,
-            working_dir, username, parent_comm, environment, container_id,
-            binary_md5
-        FROM processes 
+            working_dir, username, parent_comm, container_id, binary_md5
+        FROM processes
         WHERE id BETWEEN ? AND ?
         ORDER BY id DESC
     `
@@ -176,7 +153,7 @@ func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam s
 	}
 	maxId := id + 50
 
-	rows, err := db.db.Query(query, minId, maxId)
+	rows, err := s.db.Query(query, minId, maxId)
 	if err != nil {
 		fmt.Printf("Database query error: %v\n", err)
 		http.Error(w, err.Error(), 500)
@@ -190,8 +167,7 @@ func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam s
 		err := rows.Scan(
 			&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
 			&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
-			&p.ParentComm, &p.Environment, &p.ContainerID,
-			&p.BinaryMD5,
+			&p.ParentComm, &p.ContainerID, &p.BinaryMD5,
 		)
 		if err != nil {
 			fmt.Printf("Error scanning row: %v\n", err)
@@ -213,20 +189,18 @@ func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam s
 	// If the selected process wasn't found in our results, try to fetch it specifically
 	if !selectedExists {
 		query = `
-            SELECT 
+            SELECT
                 id, timestamp, pid, ppid, comm, cmdline, exe_path,
-                working_dir, username, parent_comm, environment, container_id,
-                binary_md5
-            FROM processes 
+                working_dir, username, parent_comm, container_id, binary_md5
+            FROM processes
             WHERE id = ?
         `
 
 		var p ProcessRow
-		err = db.db.QueryRow(query, id).Scan(
+		err = s.db.QueryRow(query, id).Scan(
 			&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
 			&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
-			&p.ParentComm, &p.Environment, &p.ContainerID,
-			&p.BinaryMD5,
+			&p.ParentComm, &p.ContainerID, &p.BinaryMD5,
 		)
 
 		if err == nil {
@@ -245,50 +219,50 @@ func handleProcessById(w http.ResponseWriter, r *http.Request, db *DB, idParam s
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+
 }
 
 // handleRecentProcesses handles fetching recent processes
-func handleRecentProcesses(w http.ResponseWriter, r *http.Request, db *DB) {
-	rows, err := db.db.Query(`
-		SELECT 
-			id, timestamp, pid, ppid, comm, cmdline, exe_path,
-			working_dir, username, parent_comm, environment, container_id,
+func (s *Server) handleRecentProcesses(w http.ResponseWriter, r *http.Request) {
+    rows, err := s.db.Query(`
+        SELECT
+            id, timestamp, pid, ppid, comm, cmdline, exe_path,
+            working_dir, username, parent_comm, container_id,
             binary_md5
-		FROM processes 
-		ORDER BY timestamp DESC 
-		LIMIT 100
-	`)
-	if err != nil {
-		fmt.Printf("Database query error: %v\n", err)
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	defer rows.Close()
+        FROM processes
+        ORDER BY timestamp DESC
+        LIMIT 100
+    `)
+    if err != nil {
+        fmt.Printf("Database query error: %v\n", err)
+        http.Error(w, err.Error(), 500)
+        return
+    }
+    defer rows.Close()
 
-	var processes []ProcessRow
-	for rows.Next() {
-		var p ProcessRow
-		err := rows.Scan(
-			&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
-			&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
-			&p.ParentComm, &p.Environment, &p.ContainerID,
-			&p.BinaryMD5,
-		)
-		if err != nil {
-			fmt.Printf("Error scanning row: %v\n", err)
-			http.Error(w, err.Error(), 500)
-			return
-		}
-		processes = append(processes, p)
-	}
+    var processes []ProcessRow
+    for rows.Next() {
+        var p ProcessRow
+        err := rows.Scan(
+            &p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
+            &p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
+            &p.ParentComm, &p.ContainerID, &p.BinaryMD5,
+        )
+        if err != nil {
+            fmt.Printf("Error scanning row: %v\n", err)
+            http.Error(w, err.Error(), 500)
+            return
+        }
+        processes = append(processes, p)
+    }
 
-	fmt.Printf("Returning %d processes\n", len(processes))
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(processes)
+    fmt.Printf("Returning %d processes\n", len(processes))
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(processes)
 }
 
-func handleBinaries(binaryCache *BinaryCache) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// handleBinaries returns an http.HandlerFunc for binary-related requests
+func (s *Server) handleBinaries(w http.ResponseWriter, r *http.Request) {
 		// Extract hash from query parameter
 		hash := r.URL.Query().Get("md5")
 
@@ -298,7 +272,7 @@ func handleBinaries(binaryCache *BinaryCache) http.HandlerFunc {
 		}
 
 		// Check if binary exists
-		binPath := binaryCache.GetBinaryPath(hash)
+		binPath := s.binaryCache.GetBinaryPath(hash)
 		if _, err := os.Stat(binPath); os.IsNotExist(err) {
 			http.Error(w, "Binary not found", 404)
 			return
@@ -308,19 +282,17 @@ func handleBinaries(binaryCache *BinaryCache) http.HandlerFunc {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.bin", hash))
 		w.Header().Set("Content-Type", "application/octet-stream")
 		http.ServeFile(w, r, binPath)
-	}
 }
 
-// handleSigmaRules handles GET requests for listing all Sigma rules
-func handleSigmaRules(sigmaDetector *SigmaDetector) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// handleSigmaRules returns an http.HandlerFunc for Sigma rule listing
+func (s *Server) handleSigmaRules(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		enabledDir := filepath.Join(sigmaDetector.rulesDir, "enabled_rules")
-		disabledDir := filepath.Join(sigmaDetector.rulesDir, "disabled_rules")
+		enabledDir := filepath.Join(s.sigmaDetector.RulesDir, "enabled_rules")
+		disabledDir := filepath.Join(s.sigmaDetector.RulesDir, "disabled_rules")
 
 		// Create directories if they don't exist
 		for _, dir := range []string{enabledDir, disabledDir} {
@@ -336,7 +308,7 @@ func handleSigmaRules(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		var rules []map[string]interface{}
 
 		// Read enabled rules
-		enabledRules, err := readRulesFromDir(enabledDir, true)
+		enabledRules, err := s.readRulesFromDir(enabledDir, true)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error reading enabled rules: %v", err), http.StatusInternalServerError)
 			return
@@ -344,7 +316,7 @@ func handleSigmaRules(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		rules = append(rules, enabledRules...)
 
 		// Read disabled rules
-		disabledRules, err := readRulesFromDir(disabledDir, false)
+		disabledRules, err := s.readRulesFromDir(disabledDir, false)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error reading disabled rules: %v", err), http.StatusInternalServerError)
 			return
@@ -354,11 +326,11 @@ func handleSigmaRules(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		// Return all rules as JSON
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(rules)
-	}
 }
 
-// readRulesFromDir reads and parses all Sigma rule files from a directory
-func readRulesFromDir(dir string, enabled bool) ([]map[string]interface{}, error) {
+
+// readRulesFromDir reads and parses Sigma rules from a directory
+func (s *Server) readRulesFromDir(dir string, enabled bool) ([]map[string]interface{}, error) {
 	var rules []map[string]interface{}
 
 	files, err := ioutil.ReadDir(dir)
@@ -381,7 +353,7 @@ func readRulesFromDir(dir string, enabled bool) ([]map[string]interface{}, error
 			}
 
 			// Use sigma-go to parse the rule
-			rule, err := sigma.ParseRule(content)
+			rule, err := sigmago.ParseRule(content)
 			if err != nil {
 				// Skip files that can't be parsed
 				continue
@@ -417,9 +389,8 @@ func readRulesFromDir(dir string, enabled bool) ([]map[string]interface{}, error
 	return rules, nil
 }
 
-// handleSigmaRuleAction handles actions on individual rules (like toggle)
-func handleSigmaRuleToggle(sigmaDetector *SigmaDetector) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// handleSigmaRuleToggle returns an http.HandlerFunc for toggling Sigma rules
+func (s *Server) handleSigmaRuleToggle(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -435,8 +406,8 @@ func handleSigmaRuleToggle(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		fmt.Printf("Toggling rule: %s\n", ruleID)
 
 		// Toggle rule's enabled status
-		enabledDir := filepath.Join(sigmaDetector.rulesDir, "enabled_rules")
-		disabledDir := filepath.Join(sigmaDetector.rulesDir, "disabled_rules")
+		enabledDir := filepath.Join(s.sigmaDetector.RulesDir, "enabled_rules")
+		disabledDir := filepath.Join(s.sigmaDetector.RulesDir, "disabled_rules")
 
 		// Find the rule file
 		var sourceDir, targetDir string
@@ -452,7 +423,7 @@ func handleSigmaRuleToggle(sigmaDetector *SigmaDetector) http.HandlerFunc {
 					continue
 				}
 
-				rule, err := sigma.ParseRule(content)
+				rule, err := sigmago.ParseRule(content)
 				if err != nil {
 					continue
 				}
@@ -477,7 +448,7 @@ func handleSigmaRuleToggle(sigmaDetector *SigmaDetector) http.HandlerFunc {
 						continue
 					}
 
-					rule, err := sigma.ParseRule(content)
+					rule, err := sigmago.ParseRule(content)
 					if err != nil {
 						continue
 					}
@@ -508,7 +479,7 @@ func handleSigmaRuleToggle(sigmaDetector *SigmaDetector) http.HandlerFunc {
 					continue
 				}
 
-				rule, err := sigma.ParseRule(content)
+				rule, err := sigmago.ParseRule(content)
 				if err != nil {
 					continue
 				}
@@ -551,7 +522,7 @@ func handleSigmaRuleToggle(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		// and trigger a reload automatically
 
 		// Parse rule for response
-		rule, _ := sigma.ParseRule(content)
+		rule, _ := sigmago.ParseRule(content)
 
 		// Return updated rule
 		ruleMap := map[string]interface{}{
@@ -578,11 +549,10 @@ func handleSigmaRuleToggle(sigmaDetector *SigmaDetector) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(ruleMap)
-	}
 }
 
-func handleSigmaRuleUpload(sigmaDetector *SigmaDetector) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// handleSigmaRuleUpload returns an http.HandlerFunc for uploading Sigma rules
+func (s *Server) handleSigmaRuleUpload(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -613,7 +583,7 @@ func handleSigmaRuleUpload(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		}
 
 		// Try to parse the rule to validate it
-		rule, err := sigma.ParseRule([]byte(request.Content))
+		rule, err := sigmago.ParseRule([]byte(request.Content))
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Invalid rule format: %v", err), http.StatusBadRequest)
 			return
@@ -622,9 +592,9 @@ func handleSigmaRuleUpload(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		// Determine target directory
 		var targetDir string
 		if request.Enabled {
-			targetDir = filepath.Join(sigmaDetector.rulesDir, "enabled_rules")
+			targetDir = filepath.Join(s.sigmaDetector.RulesDir, "enabled_rules")
 		} else {
-			targetDir = filepath.Join(sigmaDetector.rulesDir, "disabled_rules")
+			targetDir = filepath.Join(s.sigmaDetector.RulesDir, "disabled_rules")
 		}
 
 		// Ensure the directory exists
@@ -663,12 +633,10 @@ func handleSigmaRuleUpload(sigmaDetector *SigmaDetector) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(ruleMap)
-	}
 }
 
-// Handler for listing matches (GET /api/sigma/matches)
-func handleSigmaMatchesList(sigmaDetector *SigmaDetector) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// handleSigmaMatchesList returns an http.HandlerFunc for listing Sigma matches
+func (s *Server) handleSigmaMatchesList(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -684,7 +652,7 @@ func handleSigmaMatchesList(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		fmt.Printf("Fetching matches with filters: %v\n", filters)
 
 		// Get matches from detector with filters
-		matches, err := sigmaDetector.GetMatches(100, 0, filters)
+		matches, err := s.sigmaDetector.GetMatches(100, 0, filters)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error fetching matches: %v", err), http.StatusInternalServerError)
 			return
@@ -693,12 +661,10 @@ func handleSigmaMatchesList(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		// Return as JSON
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(matches)
-	}
 }
 
-// Handler for operations on individual matches
-func handleSigmaMatchOperation(sigmaDetector *SigmaDetector) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// handleSigmaMatchOperation returns an http.HandlerFunc for operations on individual matches
+func (s *Server) handleSigmaMatchOperation(w http.ResponseWriter, r *http.Request) {
 		// Extract match ID from URL path - /api/sigma/matches/{id}
 		pathParts := strings.Split(r.URL.Path, "/")
 		if len(pathParts) < 5 {
@@ -730,7 +696,7 @@ func handleSigmaMatchOperation(sigmaDetector *SigmaDetector) http.HandlerFunc {
 
 			fmt.Printf("Updating match %d status to: %s\n", matchID, request.Status)
 
-			if err := sigmaDetector.UpdateMatchStatus(matchID, request.Status); err != nil {
+			if err := s.sigmaDetector.UpdateMatchStatus(matchID, request.Status); err != nil {
 				http.Error(w, fmt.Sprintf("Error updating match status: %v", err), http.StatusInternalServerError)
 				return
 			}
@@ -744,11 +710,10 @@ func handleSigmaMatchOperation(sigmaDetector *SigmaDetector) http.HandlerFunc {
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	}
 }
 
-// Helper function to fetch a process and its ancestors
-func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
+// fetchProcessTree fetches a process and its ancestors
+func (s *Server) fetchProcessTree(pid uint32) ([]ProcessRow, error) {
 	fmt.Printf("Fetching process tree for PID %d\n", pid)
 
 	var processes []ProcessRow
@@ -763,7 +728,7 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 	for tempPid > 0 {
 		// Find the parent PID
 		var ppid uint32
-		err := db.db.QueryRow("SELECT ppid FROM processes WHERE pid = ? ORDER BY timestamp DESC LIMIT 1", tempPid).Scan(&ppid)
+		err := s.db.QueryRow("SELECT ppid FROM processes WHERE pid = ? ORDER BY timestamp DESC LIMIT 1", tempPid).Scan(&ppid)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				// No more ancestors found, break the loop
@@ -787,7 +752,7 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 	}
 
 	// Next, add child processes
-	rows, err := db.db.Query("SELECT DISTINCT pid FROM processes WHERE ppid = ? ORDER BY timestamp DESC", pid)
+	rows, err := s.db.Query("SELECT DISTINCT pid FROM processes WHERE ppid = ? ORDER BY timestamp DESC", pid)
 	if err != nil {
 		return nil, err
 	}
@@ -814,16 +779,15 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 		}
 
 		query := fmt.Sprintf(`
-			SELECT 
+			SELECT
 				id, timestamp, pid, ppid, comm, cmdline, exe_path,
-				working_dir, username, parent_comm, environment, container_id,
-                binary_md5
-			FROM processes 
+				working_dir, username, parent_comm, container_id, binary_md5
+			FROM processes
 			WHERE pid IN (%s)
 			ORDER BY timestamp DESC
 		`, strings.Join(placeholders, ","))
 
-		rows, err := db.db.Query(query, args...)
+		rows, err := s.db.Query(query, args...)
 		if err != nil {
 			return nil, err
 		}
@@ -836,8 +800,7 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 			err := rows.Scan(
 				&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
 				&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
-				&p.ParentComm, &p.Environment, &p.ContainerID,
-				&p.BinaryMD5,
+				&p.ParentComm, &p.ContainerID, &p.BinaryMD5,
 			)
 			if err != nil {
 				return nil, err
@@ -856,4 +819,23 @@ func fetchProcessTree(db *DB, pid uint32) ([]ProcessRow, error) {
 	}
 
 	return processes, nil
+
 }
+
+// Template for the index page
+const indexTemplate = `<!DOCTYPE html>
+<html>
+<head>
+    <title>BPF Process Monitor</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel" src="/app.jsx"></script>
+</body>
+</html>`
