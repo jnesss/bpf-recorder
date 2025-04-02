@@ -1,89 +1,89 @@
 package database
 
 import (
-    "database/sql"
-    "fmt"
-    "os"
-    "path/filepath"
-    "time"
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
 
-    _ "github.com/mattn/go-sqlite3"
-    
-    "bpf-recorder/process"
-    "bpf-recorder/network"
-    "bpf-recorder/types"
+	_ "github.com/mattn/go-sqlite3"
+
+	"github.com/jnesss/bpf-recorder/network"
+	"github.com/jnesss/bpf-recorder/process"
+	"github.com/jnesss/bpf-recorder/types"
 )
 
 // DB handles database operations
 type DB struct {
-    Db *sql.DB
+	Db *sql.DB
 }
 
 // ProcessRecord represents a process event in the database
 type ProcessRecord struct {
-    Timestamp   time.Time
-    PID         uint32
-    PPID        uint32
-    Comm        string
-    CmdLine     string
-    ExePath     string
-    WorkingDir  string
-    Username    string
-    ParentComm  string
-    ContainerID string
-    UID         uint32
-    GID         uint32
-    ExitCode    uint32
-    ExitTime    time.Time
-    BinaryMD5   string
+	Timestamp   time.Time
+	PID         uint32
+	PPID        uint32
+	Comm        string
+	CmdLine     string
+	ExePath     string
+	WorkingDir  string
+	Username    string
+	ParentComm  string
+	ContainerID string
+	UID         uint32
+	GID         uint32
+	ExitCode    uint32
+	ExitTime    time.Time
+	BinaryMD5   string
 }
 
 // NetworkRecord represents a network connection in the database
 type NetworkRecord struct {
-    Timestamp    time.Time
-    PID          uint32
-    ProcessName  string
-    SrcAddr      string
-    SrcPort      uint16
-    DstAddr      string
-    DstPort      uint16
-    Protocol     string
-    Operation    string
-    ContainerID  string
+	Timestamp   time.Time
+	PID         uint32
+	ProcessName string
+	SrcAddr     string
+	SrcPort     uint16
+	DstAddr     string
+	DstPort     uint16
+	Protocol    string
+	Operation   string
+	ContainerID string
 }
 
 func NewDB(dataDir string) (*DB, error) {
-    if err := os.MkdirAll(dataDir, 0755); err != nil {
-        return nil, fmt.Errorf("failed to create data directory: %v", err)
-    }
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create data directory: %v", err)
+	}
 
-    dbPath := filepath.Join(dataDir, "process_monitor.db")
-    db, err := sql.Open("sqlite3", dbPath)
-    if err != nil {
-        return nil, fmt.Errorf("failed to open database: %v", err)
-    }
+	dbPath := filepath.Join(dataDir, "process_monitor.db")
+	db, err := sql.Open("sqlite3", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %v", err)
+	}
 
-    if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
-        db.Close()
-        return nil, fmt.Errorf("failed to enable WAL mode: %v", err)
-    }
+	if _, err := db.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to enable WAL mode: %v", err)
+	}
 
-    if err := initProcessSchema(db); err != nil {
-        db.Close()
-        return nil, fmt.Errorf("failed to initialize process schema: %v", err)
-    }
+	if err := initProcessSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to initialize process schema: %v", err)
+	}
 
-    if err := initNetworkSchema(db); err != nil {
-        db.Close()
-        return nil, fmt.Errorf("failed to initialize network schema: %v", err)
-    }
+	if err := initNetworkSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to initialize network schema: %v", err)
+	}
 
-    if err := initSigmaSchema(db); err != nil {
-        db.Close()
-        return nil, fmt.Errorf("failed to initialize sigma schema: %v", err)
-    }
+	if err := initSigmaSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to initialize sigma schema: %v", err)
+	}
 
-    return &DB{Db: db}, nil
+	return &DB{Db: db}, nil
 }
 
 func initProcessSchema(db *sql.DB) error {
@@ -162,7 +162,7 @@ func initNetworkSchema(db *sql.DB) error {
 }
 
 func initSigmaSchema(db *sql.DB) error {
-    schema := `
+	schema := `
     CREATE TABLE IF NOT EXISTS detector_state (
         id INTEGER PRIMARY KEY,
         event_type TEXT NOT NULL,
@@ -199,102 +199,102 @@ func initSigmaSchema(db *sql.DB) error {
     CREATE INDEX IF NOT EXISTS idx_sigma_matches_status ON sigma_matches(status);
     CREATE INDEX IF NOT EXISTS idx_sigma_matches_event_id ON sigma_matches(event_id);`
 
-    _, err := db.Exec(schema)
-    if err != nil {
-        return fmt.Errorf("failed to create Sigma tables: %v", err)
-    }
+	_, err := db.Exec(schema)
+	if err != nil {
+		return fmt.Errorf("failed to create Sigma tables: %v", err)
+	}
 
-    return nil
+	return nil
 }
 
 // InsertProcess adds a process event record to the database
 func (db *DB) InsertProcess(record *process.ProcessInfo) error {
-    query := `
+	query := `
         INSERT INTO processes (
             timestamp, pid, ppid, comm, cmdline, exe_path,
             working_dir, username, parent_comm, container_id,
             uid, gid, binary_md5
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-    _, err := db.Db.Exec(query,
-        record.StartTime,
-        record.PID,
-        record.PPID,
-        record.Comm,
-        record.CmdLine,
-        record.ExePath,
-        record.WorkingDir,
-        record.Username,
-        record.ParentComm,
-        record.ContainerID,
-        record.UID,
-        record.GID,
-        record.BinaryMD5)
-    return err
+	_, err := db.Db.Exec(query,
+		record.StartTime,
+		record.PID,
+		record.PPID,
+		record.Comm,
+		record.CmdLine,
+		record.ExePath,
+		record.WorkingDir,
+		record.Username,
+		record.ParentComm,
+		record.ContainerID,
+		record.UID,
+		record.GID,
+		record.BinaryMD5)
+	return err
 }
 
 func (db *DB) UpdateProcessExit(pid uint32, exitCode uint32, exitTime time.Time) error {
-    query := `
+	query := `
         UPDATE processes
         SET exit_code = ?,
             exit_time = ?
         WHERE pid = ?
         AND exit_time IS NULL`
 
-    _, err := db.Db.Exec(query, exitCode, exitTime, pid)
-    return err
+	_, err := db.Db.Exec(query, exitCode, exitTime, pid)
+	return err
 }
 
 // InsertNetworkConnection adds a network connection record to the database
 func (db *DB) InsertNetworkConnection(info *network.ConnectionInfo, eventType uint32) error {
-    record := &NetworkRecord{
-        Timestamp:    time.Now(),
-        PID:          info.PID,
-        ProcessName:  info.ProcessName,
-        SrcAddr:      info.SourceIP.String(),
-        SrcPort:      info.SourcePort,
-        DstAddr:      info.DestinationIP.String(),
-        DstPort:      info.DestinationPort,
-        Protocol:     info.Protocol,
-        Operation:    getOperationString(eventType),
-        ContainerID:  info.ContainerID,
-    }
+	record := &NetworkRecord{
+		Timestamp:   time.Now(),
+		PID:         info.PID,
+		ProcessName: info.ProcessName,
+		SrcAddr:     info.SourceIP.String(),
+		SrcPort:     info.SourcePort,
+		DstAddr:     info.DestinationIP.String(),
+		DstPort:     info.DestinationPort,
+		Protocol:    info.Protocol,
+		Operation:   getOperationString(eventType),
+		ContainerID: info.ContainerID,
+	}
 
-    query := `
+	query := `
         INSERT INTO network_connections (
             timestamp, pid, process_name, src_addr, src_port,
             dst_addr, dst_port, protocol, operation, container_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-    _, err := db.Db.Exec(query,
-        record.Timestamp,
-        record.PID,
-        record.ProcessName,
-        record.SrcAddr,
-        record.SrcPort,
-        record.DstAddr,
-        record.DstPort,
-        record.Protocol,
-        record.Operation,
-        record.ContainerID,
-    )
-    return err
+	_, err := db.Db.Exec(query,
+		record.Timestamp,
+		record.PID,
+		record.ProcessName,
+		record.SrcAddr,
+		record.SrcPort,
+		record.DstAddr,
+		record.DstPort,
+		record.Protocol,
+		record.Operation,
+		record.ContainerID,
+	)
+	return err
 }
 
 func getOperationString(eventType uint32) string {
-    switch eventType {
-    case types.EventNetConnect:
-        return "connect"
-    case types.EventNetAccept:
-        return "accept"
-    case types.EventNetBind:
-        return "bind"
-    default:
-        return "unknown"
-    }
+	switch eventType {
+	case types.EventNetConnect:
+		return "connect"
+	case types.EventNetAccept:
+		return "accept"
+	case types.EventNetBind:
+		return "bind"
+	default:
+		return "unknown"
+	}
 }
 
 // Close closes the database connection
 func (db *DB) Close() error {
-    return db.Db.Close()
+	return db.Db.Close()
 }
