@@ -1,111 +1,67 @@
 #ifndef __COMMON_H
 #define __COMMON_H
 
-typedef unsigned char __u8;
-typedef unsigned short __u16;
-typedef unsigned int __u32;
-typedef unsigned long long __u64;
+#include <bpf/bpf_helpers.h>
+#include <bpf/bpf_core_read.h>
+#include <bpf/bpf_endian.h>
 
-typedef __u8  u8;
-typedef __u16 u16;
-typedef __u32 u32;
-typedef __u64 u64;
-
-// Define uid_t and gid_t
-typedef u32 uid_t;
-typedef u32 gid_t;
-
-// Define pid_t 
-typedef int pid_t;
+#define TASK_COMM_LEN 16
+#define MAX_ENTRIES 8192
+#define ALLOW_PKT 1
+#define ALLOW_SK 1
 
 // Event types
-#define EVENT_EXEC     1  // Process execution
-#define EVENT_EXIT     2  // Process exit
-#define EVENT_CONNECT  3  // Network connect
-#define EVENT_ACCEPT   4  // Network accept
-#define EVENT_BIND     5  // Network bind
+#define EVENT_PROCESS_EXEC 1   // Process execution
+#define EVENT_PROCESS_EXIT 2   // Process exit
+#define EVENT_NET_CONNECT  3   // Network connect
+#define EVENT_NET_ACCEPT   4   // Network accept
+#define EVENT_NET_BIND     5   // Network bind
 
-// Enhanced event structure with inline command line
+// Enhanced process event structure - matching old structure
 struct process_event {
-    u64 timestamp;   // 8 bytes
+    __u32 event_type;          // Type of event
+    __u32 pid;                 // Process ID
+    __u64 timestamp;           // Event timestamp
+    char comm[TASK_COMM_LEN];  // Process name
+    __u32 ppid;                // Parent process ID (if available)
+    __u32 uid;                 // User ID
+    __u32 gid;                 // Group ID
+    __u32 exit_code;           // Exit code (for exit events)
     
-    // 4-byte aligned fields
-    u32 event_type;  // 4 bytes - Using the defines above
-    u32 pid;         // 4 bytes
-    u32 ppid;        // 4 bytes
-    uid_t uid;       // 4 bytes
-    gid_t gid;       // 4 bytes
-    int exit_code;   // 4 bytes
-    u32 flags;       // 4 bytes
-    
-    // Variable-length fields
-    char comm[16];           // Process name
-    char parent_comm[16];    // Parent process name
-    char filename[64];       // Executable path
-    char cwd[64];            // Current working directory
-    
-    // For command line tracking
-    u32 cmdline_map_id;      // ID to lookup command line in the map
-    
-} __attribute__((packed));
-
-// Network event structure for tracking connections
-struct network_event {
-    u64 timestamp;   // 8 bytes
-  
-    // 4-byte aligned fields
-    u32 event_type;           // 4 bytes - Using the defines above
-    u32 pid;                  // 4 bytes - Process ID
-    u32 ppid;                 // 4 bytes - Parent process ID
-    uid_t uid;                // 4 bytes - User ID
-    gid_t gid;                // 4 bytes - Group ID
-    u32 src_addr_v4;          // 4 bytes - Source IPv4 address
-    u32 dst_addr_v4;          // 4 bytes - Destination IPv4 address
-    u16 src_port;             // 2 bytes - Source port
-    u16 dst_port;             // 2 bytes - Destination port
-    u8  ip_version;           // 1 byte  - IP version (4 or 6)
-    u8  protocol;             // 1 byte  - Protocol (TCP, UDP, etc.)
-    u8  operation;            // 1 byte  - Operation type (connect, accept, bind)
-    u8  padding;              // 1 byte  - Padding for alignment
-    int return_code;          // 4 bytes - Syscall return code
-    
-    // Variable-length fields
-    char comm[16];            // Process name
-    char parent_comm[16];     // Parent process name
-    char exe_path[64];        // Executable path
-    
-    // IPv6 addresses (if applicable)
-    u32 src_addr_v6[4];       // 16 bytes - Source IPv6 address
-    u32 dst_addr_v6[4];       // 16 bytes - Destination IPv6 address
-} __attribute__((packed));
-
-/* BPF map definition struct */
-struct bpf_map_def {
-    unsigned int type;
-    unsigned int key_size;
-    unsigned int value_size;
-    unsigned int max_entries;
-    unsigned int map_flags;
+    // New fields
+    char parent_comm[TASK_COMM_LEN]; // Parent process name
+    char exe_path[64];               // Executable path
+    __u32 flags;                     // Additional flags
 };
 
-/* Map types - corresponds to enum bpf_map_type */
-#define BPF_MAP_TYPE_PERF_EVENT_ARRAY 4
+// Network event structure
+struct network_event {
+    __u32 event_type;         // Type of event
+    __u32 pid;                // Process ID
+    __u64 timestamp;          // Event timestamp
+    char comm[TASK_COMM_LEN]; // Process name
+    __u32 saddr_a;            // Source IP address parts
+    __u32 saddr_b;
+    __u32 saddr_c;
+    __u32 saddr_d;
+    __u32 daddr_a;            // Destination IP address parts
+    __u32 daddr_b;
+    __u32 daddr_c;
+    __u32 daddr_d;
+    __u16 sport;              // Source port
+    __u16 dport;              // Destination port
+    __u8  protocol;           // Protocol (TCP/UDP)
+};
 
-// Network operation types
-#define NET_OPERATION_CONNECT  1
-#define NET_OPERATION_ACCEPT   2
-#define NET_OPERATION_BIND     3
+// Socket info for tracking process info
+struct sock_info {
+    __u32 pid;
+    char comm[TASK_COMM_LEN];
+};
 
-// Network protocol types
-#define NET_PROTOCOL_TCP      6   // Matches IPPROTO_TCP
-#define NET_PROTOCOL_UDP     17   // Matches IPPROTO_UDP
+// Command line info structure - used in maps, not on stack
+struct cmd_line {
+    char args[128];           // Command line arguments (reduced size for BPF verifier)
+};
 
-
-// Placeholder for Linux-specific structs
-#if defined(__linux__)
-// This will be included in Linux builds
-struct task_struct;
-struct cred;
-#endif
-
-#endif
+#endif /* __COMMON_H */
