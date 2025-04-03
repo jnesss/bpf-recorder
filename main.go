@@ -83,6 +83,7 @@ func main() {
 	}
 
 	webserver := web.NewServer(db.Db, sigmaDetector, binaryCache, ":8080")
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		if err := webserver.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
