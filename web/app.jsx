@@ -286,6 +286,122 @@ const ProcessDetails = ({ process, isCollapsed }) => {
   );
 };
 
+// Add this component to your app.jsx
+const NetworkConnections = () => {
+    const [connections, setConnections] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [autoRefresh, setAutoRefresh] = useState(false);
+
+    const fetchConnections = useCallback(async () => {
+        try {
+            const response = await fetch('/api/network');
+            if (!response.ok) {
+                throw new Error(`HTTP error: ${response.status}`);
+            }
+            const data = await response.json();
+            setConnections(data);
+            setLoading(false);
+        } catch (err) {
+            setError(err.message);
+            setLoading(false);
+        }
+    }, []);
+
+    // Fetch initially and set up auto-refresh if enabled
+    useEffect(() => {
+        fetchConnections();
+        if (autoRefresh) {
+            const interval = setInterval(fetchConnections, 5000);
+            return () => clearInterval(interval);
+        }
+    }, [autoRefresh, fetchConnections]);
+
+    if (loading) return <div className="text-center py-12">Loading network connections...</div>;
+    if (error) return <div className="text-center py-12 text-red-600">Error: {error}</div>;
+
+    return (
+        <div className="bg-white shadow rounded-lg overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-200 flex justify-between items-center">
+                <h2 className="text-lg font-medium text-gray-900">Network Connections</h2>
+                <div className="flex items-center space-x-4">
+                    <label className="flex items-center space-x-2">
+                        <input
+                            type="checkbox"
+                            checked={autoRefresh}
+                            onChange={(e) => setAutoRefresh(e.target.checked)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-sm text-gray-600">Auto-refresh</span>
+                    </label>
+                    <button
+                        onClick={fetchConnections}
+                        className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                    >
+                        Refresh
+                    </button>
+                </div>
+            </div>
+
+            <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                        <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Process</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Operation</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destination</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Protocol</th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Container</th>
+                        </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                        {connections.map((conn) => (
+                            <tr key={conn.id} className="hover:bg-gray-50">
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {new Date(conn.timestamp).toLocaleString()}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="flex items-center">
+                                        <div className="text-sm font-medium text-gray-900">
+                                            {conn.processName}
+                                        </div>
+                                        <div className="ml-2 text-sm text-gray-500">
+                                            ({conn.pid})
+                                        </div>
+                                    </div>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                        conn.operation === 'connect' ? 'bg-blue-100 text-blue-800' :
+                                        conn.operation === 'accept' ? 'bg-green-100 text-green-800' :
+                                        'bg-gray-100 text-gray-800'
+                                    }`}>
+                                        {conn.operation}
+                                    </span>
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                                    {conn.srcAddr}:{conn.srcPort}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
+                                    {conn.dstAddr}:{conn.dstPort}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {conn.protocol}
+                                </td>
+                                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    {conn.containerId || '-'}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
 // LeftNavigation component with explicit SVG icons
 const LeftNavigation = ({ activeSection, onChangeSection, collapsed, onToggleCollapse }) => {
   // Define sections with icons and labels
@@ -1885,7 +2001,7 @@ const App = () => {
           />
         );
       case 'network':
-        return <div className="p-12 text-center text-gray-500">Network monitoring coming soon</div>;
+        return <NetworkConnections />;
       case 'files':
         return <div className="p-12 text-center text-gray-500">File access monitoring coming soon</div>;
       case 'rules':

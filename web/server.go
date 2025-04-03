@@ -48,6 +48,7 @@ func (s *Server) Start() error {
 	http.HandleFunc("/", debugHandler(s.handleIndex))
 	http.HandleFunc("/app.jsx", debugHandler(s.handleAppJSX))
 	http.HandleFunc("/api/processes", debugHandler(s.handleProcesses))
+	http.HandleFunc("/api/network", debugHandler(s.handleNetworkConnections))
 	http.HandleFunc("/api/binaries", debugHandler(s.handleBinaries))
 
 	// Add Sigma routes if detector is available
@@ -107,6 +108,45 @@ func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
 
 	// Default: fetch recent processes
 	s.handleRecentProcesses(w, r)
+}
+
+func (s *Server) handleNetworkConnections(w http.ResponseWriter, r *http.Request, db *DB) {
+	rows, err := s.db.Query(`
+        SELECT 
+            id, timestamp, pid, process_name, 
+            src_addr, src_port, dst_addr, dst_port,
+            protocol, operation, container_id
+        FROM network_connections 
+        ORDER BY timestamp DESC 
+        LIMIT 1000
+    `)
+	if err != nil {
+		fmt.Printf("Database query error: %v\n", err)
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	defer rows.Close()
+
+	var connections []NetworkRow
+	for rows.Next() {
+		var conn NetworkRow
+		err := rows.Scan(
+			&conn.ID, &conn.Timestamp, &conn.PID, &conn.ProcessName,
+			&conn.SrcAddr, &conn.SrcPort, &conn.DstAddr, &conn.DstPort,
+			&conn.Protocol, &conn.Operation, &conn.ContainerID,
+		)
+		if err != nil {
+			fmt.Printf("Error scanning row: %v\n", err)
+			http.Error(w, err.Error(), 500)
+			return
+		}
+		connections = append(connections, conn)
+	}
+
+	fmt.Printf("Returning %d network connections\n", len(connections))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(connections)
 }
 
 // handleProcessTree handles fetching a process tree for a specific PID
