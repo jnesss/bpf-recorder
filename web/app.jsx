@@ -22,13 +22,14 @@ const ProcessList = ({ processes, onSelectProcess }) => {
       <table className="min-w-full divide-y divide-gray-200">
         <thead className="bg-gray-50">
           <tr>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PID</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PPID</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Command</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Command Line</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
-            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Container</th>
+            <th className="w-20 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+            <th className="w-36 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Time</th>
+            <th className="w-20 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PID</th>
+            <th className="w-20 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PPID</th>
+            <th className="w-32 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Command</th>
+            <th className="w-96 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Command Line</th>
+            <th className="w-32 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">User</th>
+            <th className="w-32 px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Container</th>
           </tr>
         </thead>
         <tbody className="bg-white divide-y divide-gray-200">
@@ -38,18 +39,49 @@ const ProcessList = ({ processes, onSelectProcess }) => {
               onClick={() => onSelectProcess(process)}
               className="hover:bg-gray-50 cursor-pointer"
             >
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+              <td className="px-3 py-4 whitespace-nowrap">
+                <div className="flex items-center space-x-1">
+                  {/* Activity status - green if no exit time, gray if exited */}
+                  <span 
+                    className={`flex-shrink-0 w-2 h-2 rounded-full ${
+                      !process.exitTime ? 'bg-green-400' : 'bg-gray-300'
+                    }`}
+                    title={!process.exitTime ? "Process Active" : "Process Exited"}
+                  />
+                  {/* Stats indicator - only show if we have non-zero stats */}
+                  {((process.cpuUsage && process.cpuUsage > 0) || 
+                    (process.memoryUsage && process.memoryUsage > 0) || 
+                    (process.threadCount && process.threadCount > 0)) ? (
+                    <svg 
+                      className="w-4 h-4 text-blue-500" 
+                      fill="none" 
+                      viewBox="0 0 24 24" 
+                      stroke="currentColor"
+                      title="Resource Stats Available"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  ) : null}
+                </div>
+              </td>
+              <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
                 {new Date(process.timestamp).toLocaleString()}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{process.pid}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{process.ppid}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">{process.comm || '-'}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm font-mono overflow-hidden text-ellipsis" style={{maxWidth: '300px'}}>
-                {process.cmdline || '-'}
+              <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">{process.pid}</td>
+              <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">{process.ppid}</td>
+              <td className="px-3 py-4 whitespace-nowrap text-sm font-mono">
+                {process.comm || '-'}
               </td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{process.username}</td>
-              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {process.containerId || '-'}
+              <td className="px-3 py-4 text-sm font-mono">
+                <div className="truncate max-w-lg" title={process.cmdline || '-'}>
+                  {process.cmdline || '-'}
+                </div>
+              </td>
+              <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">{process.username}</td>
+              <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                <div className="truncate max-w-[8rem]" title={process.containerId || '-'}>
+                  {process.containerId || '-'}
+                </div>
               </td>
             </tr>
           ))}
@@ -59,8 +91,8 @@ const ProcessList = ({ processes, onSelectProcess }) => {
   );
 };
 
-// Perfect Process Tree component
-const PerfectProcessTree = ({ processes, selectedProcess, onSelectProcess }) => {
+// Process Tree component
+const ProcessTree = ({ processes, selectedProcess, onSelectProcess }) => {
   if (!selectedProcess) return null;
   
   const [treeNodes, setTreeNodes] = useState([]);
@@ -282,6 +314,35 @@ const ProcessDetails = ({ process, isCollapsed }) => {
           {formatEnvironment()}
         </div>
       </div>
+          
+      {process.cpuUsage !== null && (
+          <div className="mt-4">
+              <h3 className="text-sm font-medium text-gray-600">Resource Usage</h3>
+              <div className="mt-2 grid grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg">
+                  {process.cpuUsage !== null && (
+                      <div>
+                          <span className="text-xs text-gray-500">CPU</span>
+                          <div className="text-sm font-medium">{process.cpuUsage.toFixed(1)}%</div>
+                      </div>
+                  )}
+                  {process.memoryUsage !== null && (
+                      <div>
+                          <span className="text-xs text-gray-500">Memory</span>
+                          <div className="text-sm font-medium">
+                              {(process.memoryUsage / (1024 * 1024)).toFixed(1)} MB
+                              {process.memoryPercent !== null && ` (${process.memoryPercent.toFixed(1)}%)`}
+                          </div>
+                      </div>
+                  )}
+                  {process.threadCount !== null && (
+                      <div>
+                          <span className="text-xs text-gray-500">Threads</span>
+                          <div className="text-sm font-medium">{process.threadCount}</div>
+                      </div>
+                  )}
+              </div>
+          </div>
+      )}
     </div>
   );
 };
@@ -2121,9 +2182,9 @@ const App = () => {
 
             {/* Sidebar content with perfect process tree at top */}
             <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Perfect Process Tree - only show when expanded and process is selected */}
+              {/* Process Tree - only show when expanded and process is selected */}
               {!isCollapsed && selectedProcess && (
-                <PerfectProcessTree 
+                <ProcessTree 
                   processes={processes} 
                   selectedProcess={selectedProcess} 
                   onSelectProcess={handleProcessSelect}
