@@ -13,6 +13,8 @@ const (
 	EVENT_NET_CONNECT  = 3
 	EVENT_NET_ACCEPT   = 4
 	EVENT_NET_BIND     = 5
+	EVENT_DNS          = 6
+	EVENT_TLS          = 7
 )
 
 // EventHeader is common to all event types
