@@ -44,45 +44,55 @@ int cgroup_sock_create(struct bpf_sock *sk) {
     return ALLOW_SK;
 }
 
-// Extract very basic query name
-static inline void extract_simple_name(dns_event_t *evt, void *data, void *data_end) {
-    // Pointer to the first byte after DNS header (start of query)
+static inline void extract_multilabel_name_v1(dns_event_t *evt, void *data, void *data_end) {
     unsigned char *query_start = (unsigned char *)data + DNS_HEADER_SIZE;
+    __builtin_memset(evt->query_name, 0, DNS_MAX_NAME_LEN);
     
-    // Bounds check
-    if ((void *)(query_start + 1) > data_end) {
-        return;
+    if ((void *)(query_start + 1) > data_end) return;
+    
+    int pos = 0;
+    
+    // First label
+    unsigned char len1 = *query_start;
+    if (len1 == 0 || len1 > 63 || (void *)(query_start + 1 + len1) > data_end) return;
+    
+    // Copy only 15 chars max per label to reduce instruction count
+    for (int i = 0; i < len1 && i < 15 && pos < DNS_MAX_NAME_LEN - 1; i++) {
+        if ((void *)(query_start + 1 + i) >= data_end) break;
+        evt->query_name[pos++] = query_start[1 + i];
     }
     
-    // Get first label length
-    unsigned char label_len = *query_start;
+    // Second label
+    unsigned char *next = query_start + 1 + len1;
+    if ((void *)(next + 1) > data_end) goto done;
+    unsigned char len2 = *next;
+    if (len2 == 0 || (len2 & 0xC0) == 0xC0) goto done;
     
-    // Basic validation
-    if (label_len == 0 || label_len > MAX_LABEL_SIZE || (void *)(query_start + 1 + label_len) > data_end) {
-        return;
+    if (pos < DNS_MAX_NAME_LEN - 1) evt->query_name[pos++] = '.';
+    if ((void *)(next + 1 + len2) > data_end) goto done;
+    
+    for (int i = 0; i < len2 && i < 15 && pos < DNS_MAX_NAME_LEN - 1; i++) {
+        if ((void *)(next + 1 + i) >= data_end) break;
+        evt->query_name[pos++] = next[1 + i];
     }
     
-    // Copy first label only (first component of domain name)
-    for (int i = 0; i < label_len && i < MAX_LABEL_SIZE; i++) {
-        // Strict bounds check per byte
-        if ((void *)(query_start + 1 + i) >= data_end) {
-            break;
-        }
-        
-        evt->query_name[i] = *(query_start + 1 + i);
-        
-        // Ensure we don't overflow our buffer
-        if (i + 1 >= DNS_MAX_NAME_LEN - 1) {
-            break;
-        }
-    }
+    // Third label
+    next = next + 1 + len2;
+    if ((void *)(next + 1) > data_end) goto done;
+    unsigned char len3 = *next;
+    if (len3 == 0 || (len3 & 0xC0) == 0xC0) goto done;
     
-    // Null terminate the string
-    if (label_len < DNS_MAX_NAME_LEN - 1) {
-        evt->query_name[label_len] = '\0';
-    } else {
-        evt->query_name[DNS_MAX_NAME_LEN - 1] = '\0';
+    if (pos < DNS_MAX_NAME_LEN - 1) evt->query_name[pos++] = '.';
+    if ((void *)(next + 1 + len3) > data_end) goto done;
+    
+    for (int i = 0; i < len3 && i < 15 && pos < DNS_MAX_NAME_LEN - 1; i++) {
+        if ((void *)(next + 1 + i) >= data_end) break;
+        evt->query_name[pos++] = next[1 + i];
     }
+
+done:
+    // Null terminate
+    if (pos < DNS_MAX_NAME_LEN) evt->query_name[pos] = '\0';
 }
 
 // Parse DNS packet with basic header parsing and simple name extraction
@@ -198,7 +208,7 @@ static inline void process_skb_dns(struct __sk_buff *skb, __u8 event_subtype) {
         
         // Only extract query name for queries with at least one question
         if (evt->question_count > 0 && !evt->is_response) {
-            extract_simple_name(evt, dns_data, data_end);
+	    extract_multilabel_name_v1(evt, dns_data, data_end);
         }
         
         // Submit the event
