@@ -50,6 +50,7 @@ func (s *Server) Start(ctx context.Context) error {
 	http.HandleFunc("/", debugHandler(s.handleIndex))
 	http.HandleFunc("/app.jsx", debugHandler(s.handleAppJSX))
 	http.HandleFunc("/api/processes", debugHandler(s.handleProcesses))
+	http.HandleFunc("/api/network", debugHandler(s.handleNetworkConnections))
 	http.HandleFunc("/api/binaries", debugHandler(s.handleBinaries))
 
 	// Add Sigma routes if detector is available
