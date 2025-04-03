@@ -61,6 +61,40 @@ type NetworkRecord struct {
 	ContainerID string
 }
 
+// DNSRecord represents a DNS query or response in the database
+type DNSRecord struct {
+	Timestamp     time.Time
+	PID           uint32
+	ProcessName   string
+	SrcAddr       string
+	SrcPort       uint16
+	DstAddr       string
+	DstPort       uint16
+	ContainerID   string
+	TransactionID uint16
+	QueryName     string
+	QueryType     uint16
+	IsResponse    bool
+	Flags         uint16
+	QuestionCount uint16
+	AnswerCount   uint16
+}
+
+// TLSRecord represents a TLS handshake event in the database
+type TLSRecord struct {
+	Timestamp     time.Time
+	PID           uint32
+	ProcessName   string
+	SrcAddr       string
+	SrcPort       uint16
+	DstAddr       string
+	DstPort       uint16
+	ContainerID   string
+	TLSVersion    uint16
+	HandshakeType uint8
+	SNI           string
+}
+
 func NewDB(dataDir string) (*DB, error) {
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create data directory: %v", err)
@@ -90,6 +124,16 @@ func NewDB(dataDir string) (*DB, error) {
 	if err := initSigmaSchema(db); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("failed to initialize sigma schema: %v", err)
+	}
+
+	if err := initDNSSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to initialize DNS schema: %v", err)
+	}
+
+	if err := initTLSSchema(db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to initialize TLS schema: %v", err)
 	}
 
 	return &DB{Db: db}, nil
@@ -221,6 +265,84 @@ func initSigmaSchema(db *sql.DB) error {
 	_, err := db.Exec(schema)
 	if err != nil {
 		return fmt.Errorf("failed to create Sigma tables: %v", err)
+	}
+
+	return nil
+}
+
+// initDNSSchema creates the DNS table in the database
+func initDNSSchema(db *sql.DB) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS dns_events (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp    DATETIME NOT NULL,
+		pid          INTEGER NOT NULL,
+		process_name TEXT NOT NULL,
+		src_addr     TEXT,
+		src_port     INTEGER,
+		dst_addr     TEXT,
+		dst_port     INTEGER,
+		transaction_id INTEGER,
+		query_name   TEXT,
+		query_type   INTEGER,
+		is_response  BOOLEAN,
+		flags        INTEGER,
+		question_count INTEGER,
+		answer_count INTEGER,
+		container_id TEXT
+	);`
+
+	if _, err := db.Exec(schema); err != nil {
+		return fmt.Errorf("failed to create dns_events table: %v", err)
+	}
+
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_dns_pid ON dns_events(pid);",
+		"CREATE INDEX IF NOT EXISTS idx_dns_timestamp ON dns_events(timestamp);",
+		"CREATE INDEX IF NOT EXISTS idx_dns_query ON dns_events(query_name);",
+	}
+
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %v", err)
+		}
+	}
+
+	return nil
+}
+
+// initTLSSchema creates the TLS table in the database
+func initTLSSchema(db *sql.DB) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS tls_events (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		timestamp    DATETIME NOT NULL,
+		pid          INTEGER NOT NULL,
+		process_name TEXT NOT NULL,
+		src_addr     TEXT,
+		src_port     INTEGER,
+		dst_addr     TEXT,
+		dst_port     INTEGER,
+		tls_version  INTEGER,
+		handshake_type INTEGER,
+		sni          TEXT,
+		container_id TEXT
+	);`
+
+	if _, err := db.Exec(schema); err != nil {
+		return fmt.Errorf("failed to create tls_events table: %v", err)
+	}
+
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_tls_pid ON tls_events(pid);",
+		"CREATE INDEX IF NOT EXISTS idx_tls_timestamp ON tls_events(timestamp);",
+		"CREATE INDEX IF NOT EXISTS idx_tls_sni ON tls_events(sni);",
+	}
+
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("failed to create index: %v", err)
+		}
 	}
 
 	return nil
@@ -449,6 +571,91 @@ func getOperationString(eventType uint32) string {
 	default:
 		return "unknown"
 	}
+}
+
+// InsertDNSEvent adds a DNS event record to the database
+func (db *DB) InsertDNSEvent(info *network.DNSInfo) error {
+	record := &DNSRecord{
+		Timestamp:     info.Timestamp,
+		PID:           info.PID,
+		ProcessName:   info.ProcessName,
+		SrcAddr:       info.SourceIP.String(),
+		SrcPort:       info.SourcePort,
+		DstAddr:       info.DestinationIP.String(),
+		DstPort:       info.DestinationPort,
+		ContainerID:   info.ContainerID,
+		TransactionID: info.TransactionID,
+		QueryName:     info.QueryName,
+		QueryType:     info.QueryType,
+		IsResponse:    info.IsResponse,
+		Flags:         info.Flags,
+		QuestionCount: info.QuestionCount,
+		AnswerCount:   info.AnswerCount,
+	}
+
+	query := `
+        INSERT INTO dns_events (
+            timestamp, pid, process_name, src_addr, src_port,
+            dst_addr, dst_port, transaction_id, query_name, query_type,
+            is_response, flags, question_count, answer_count, container_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := db.Db.Exec(query,
+		record.Timestamp,
+		record.PID,
+		record.ProcessName,
+		record.SrcAddr,
+		record.SrcPort,
+		record.DstAddr,
+		record.DstPort,
+		record.TransactionID,
+		record.QueryName,
+		record.QueryType,
+		record.IsResponse,
+		record.Flags,
+		record.QuestionCount,
+		record.AnswerCount,
+		record.ContainerID,
+	)
+	return err
+}
+
+// InsertTLSEvent adds a TLS event record to the database
+func (db *DB) InsertTLSEvent(info *network.TLSInfo) error {
+	record := &TLSRecord{
+		Timestamp:     info.Timestamp,
+		PID:           info.PID,
+		ProcessName:   info.ProcessName,
+		SrcAddr:       info.SourceIP.String(),
+		SrcPort:       info.SourcePort,
+		DstAddr:       info.DestinationIP.String(),
+		DstPort:       info.DestinationPort,
+		ContainerID:   info.ContainerID,
+		TLSVersion:    info.TLSVersion,
+		HandshakeType: info.HandshakeType,
+		SNI:           info.SNI,
+	}
+
+	query := `
+        INSERT INTO tls_events (
+            timestamp, pid, process_name, src_addr, src_port,
+            dst_addr, dst_port, tls_version, handshake_type, sni, container_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+	_, err := db.Db.Exec(query,
+		record.Timestamp,
+		record.PID,
+		record.ProcessName,
+		record.SrcAddr,
+		record.SrcPort,
+		record.DstAddr,
+		record.DstPort,
+		record.TLSVersion,
+		record.HandshakeType,
+		record.SNI,
+		record.ContainerID,
+	)
+	return err
 }
 
 // Close closes the database connection

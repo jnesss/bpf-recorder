@@ -57,6 +57,53 @@ type NetworkEvent struct {
 	Protocol  uint8
 }
 
+type DNSEvent struct {
+	EventType     uint32
+	Pid           uint32
+	Timestamp     uint64
+	Comm          [16]byte
+	SAddrA        uint32
+	SAddrB        uint32
+	SAddrC        uint32
+	SAddrD        uint32
+	DAddrA        uint32
+	DAddrB        uint32
+	DAddrC        uint32
+	DAddrD        uint32
+	SPort         uint16
+	DPort         uint16
+	OpFlags       uint8
+	Txid          uint16
+	Flags         uint16
+	QuestionCount uint16
+	AnswerCount   uint16
+	IsResponse    uint8
+	QueryType     uint16
+	QueryName     [128]byte
+}
+
+type TLSEvent struct {
+	EventType     uint32
+	Pid           uint32
+	Timestamp     uint64
+	Comm          [16]byte
+	SAddrA        uint32
+	SAddrB        uint32
+	SAddrC        uint32
+	SAddrD        uint32
+	DAddrA        uint32
+	DAddrB        uint32
+	DAddrC        uint32
+	DAddrD        uint32
+	SPort         uint16
+	DPort         uint16
+	TlsVersion    uint16
+	HandshakeType uint8
+	CipherLen     uint8
+	Ciphers       [8]uint16
+	Sni           [128]byte
+}
+
 // BPFMonitor interface defines what we need from our BPF implementation
 type BPFMonitor interface {
 	Start(context.Context) error
