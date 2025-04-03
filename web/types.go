@@ -6,18 +6,23 @@ import (
 
 // ProcessRow represents a process for the web API
 type ProcessRow struct {
-	ID          int64     `json:"id"`
-	Timestamp   time.Time `json:"timestamp"`
-	PID         uint32    `json:"pid"`
-	PPID        uint32    `json:"ppid"`
-	Comm        string    `json:"comm"`
-	CmdLine     string    `json:"cmdline"`
-	ExePath     string    `json:"exePath"`
-	WorkingDir  string    `json:"workingDir"`
-	Username    string    `json:"username"`
-	ParentComm  string    `json:"parentComm"`
-	ContainerID string    `json:"containerId"`
-	BinaryMD5   string    `json:"binaryMd5"`
+	ID            int64      `json:"id"`
+	Timestamp     time.Time  `json:"timestamp"`
+	PID           uint32     `json:"pid"`
+	PPID          uint32     `json:"ppid"`
+	Comm          string     `json:"comm"`
+	CmdLine       string     `json:"cmdline"`
+	ExePath       string     `json:"exePath"`
+	WorkingDir    string     `json:"workingDir"`
+	Username      string     `json:"username"`
+	ParentComm    string     `json:"parentComm"`
+	ContainerID   string     `json:"containerId"`
+	BinaryMD5     string     `json:"binaryMd5"`
+	ExitTime      *time.Time `json:"exitTime,omitempty"`
+	CPUUsage      *float64   `json:"cpuUsage,omitempty"`
+	MemoryUsage   *uint64    `json:"memoryUsage,omitempty"`
+	MemoryPercent *float64   `json:"memoryPercent,omitempty"`
+	ThreadCount   *int       `json:"threadCount,omitempty"`
 }
 
 type NetworkRow struct {

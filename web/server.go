@@ -285,14 +285,16 @@ func (s *Server) handleProcessById(w http.ResponseWriter, r *http.Request, idPar
 // handleRecentProcesses handles fetching recent processes
 func (s *Server) handleRecentProcesses(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(`
-        SELECT
-            id, timestamp, pid, ppid, comm, cmdline, exe_path,
-            working_dir, username, parent_comm, container_id,
-            binary_md5
-        FROM processes
-        ORDER BY timestamp DESC
-        LIMIT 100
-    `)
+            SELECT
+                id, timestamp, pid, ppid, comm, 
+                cmdline, exe_path, working_dir, username, 
+                parent_comm, container_id, binary_md5,
+                exit_time,
+                cpu_usage, memory_usage, memory_percent, thread_count
+            FROM processes
+            ORDER BY timestamp DESC
+            LIMIT 100
+        `)
 	if err != nil {
 		fmt.Printf("Database query error: %v\n", err)
 		http.Error(w, err.Error(), 500)
@@ -307,6 +309,8 @@ func (s *Server) handleRecentProcesses(w http.ResponseWriter, r *http.Request) {
 			&p.ID, &p.Timestamp, &p.PID, &p.PPID, &p.Comm,
 			&p.CmdLine, &p.ExePath, &p.WorkingDir, &p.Username,
 			&p.ParentComm, &p.ContainerID, &p.BinaryMD5,
+			&p.ExitTime,
+			&p.CPUUsage, &p.MemoryUsage, &p.MemoryPercent, &p.ThreadCount,
 		)
 		if err != nil {
 			fmt.Printf("Error scanning row: %v\n", err)
