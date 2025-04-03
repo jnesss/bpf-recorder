@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -9,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -57,23 +60,32 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize database: %v", err)
 	}
-	defer db.Close()
 
-	// Initialize Sigma detector
+	// Create context for graceful shutdown
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create WaitGroup to track all running services
+	var wg sync.WaitGroup
+
 	sigmaDetector, err := sigma.NewDetector(*rulesDir, db.Db)
 	if err != nil {
 		log.Printf("Warning: Failed to initialize Sigma detector: %v", err)
 	} else {
-		if err := sigmaDetector.StartPolling(10 * time.Second); err != nil {
-			log.Printf("Warning: Failed to start Sigma detection: %v", err)
-		}
-		defer sigmaDetector.StopPolling()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := sigmaDetector.StartPolling(ctx, 10*time.Second); err != nil &&
+				!errors.Is(err, context.Canceled) {
+				log.Printf("Sigma detector error: %v\n", err)
+			}
+		}()
 	}
 
-	// Start web server in background
+	webserver := web.NewServer(db.Db, sigmaDetector, binaryCache, ":8080")
 	go func() {
-		webserver := web.NewServer(db.Db, sigmaDetector, binaryCache, ":8080")
-		if err := webserver.Start(); err != nil {
+		defer wg.Done()
+		if err := webserver.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("Web server error: %v\n", err)
 		}
 	}()
@@ -85,16 +97,45 @@ func main() {
 		log.Fatalf("Failed to initialize BPF monitor: %v", err)
 	}
 
-	if err := monitor.Start(); err != nil {
-		log.Fatalf("Failed to start BPF monitor: %v", err)
-	}
-	defer monitor.Stop()
+	// Start BPF monitor with context
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := monitor.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("BPF monitor error: %v\n", err)
+		}
+	}()
 
 	// Wait for signal
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	fmt.Println("\nShutting down gracefully...")
+
+	// Cancel context to signal all services to stop
+	cancel()
+
+	// Wait for all services to finish with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("All services stopped gracefully")
+	case <-time.After(10 * time.Second):
+		fmt.Println("Some services didn't stop in time")
+	}
+
+	// Final cleanup
+	if err := monitor.Stop(); err != nil {
+		log.Printf("Error stopping BPF monitor: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		log.Printf("Error closing database: %v", err)
+	}
 }
 
 // getRunningUser gets the SUDO_USER or current user if not running with sudo

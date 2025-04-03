@@ -3,6 +3,8 @@
 package platform
 
 import (
+	"context"
+
 	"github.com/jnesss/bpf-recorder/binary"
 	"github.com/jnesss/bpf-recorder/database"
 )
@@ -19,7 +21,7 @@ func NewBPFMonitor(db *database.DB, binaryCache *binary.Cache, cgroupPath string
 	}, nil
 }
 
-func (m *DarwinBPFMonitor) Start() error {
+func (m *DarwinBPFMonitor) Start(context.Context) error {
 	// No-op on Darwin
 	return nil
 }

@@ -1,11 +1,13 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -35,7 +37,7 @@ func NewServer(db *sql.DB, sigmaDetector *sigma.Detector, binaryCache *binary.Ca
 	}
 }
 
-func (s *Server) Start() error {
+func (s *Server) Start(ctx context.Context) error {
 	// Debug handler that wraps other handlers and logs request details
 	debugHandler := func(h http.HandlerFunc) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +50,6 @@ func (s *Server) Start() error {
 	http.HandleFunc("/", debugHandler(s.handleIndex))
 	http.HandleFunc("/app.jsx", debugHandler(s.handleAppJSX))
 	http.HandleFunc("/api/processes", debugHandler(s.handleProcesses))
-	http.HandleFunc("/api/network", debugHandler(s.handleNetworkConnections))
 	http.HandleFunc("/api/binaries", debugHandler(s.handleBinaries))
 
 	// Add Sigma routes if detector is available
@@ -60,8 +61,28 @@ func (s *Server) Start() error {
 		http.HandleFunc("/api/sigma/matches/", debugHandler(s.handleSigmaMatchOperation))
 	}
 
+	// Create server instance
+	srv := &http.Server{
+		Addr:    s.listenAddr,
+		Handler: http.DefaultServeMux,
+	}
+
 	fmt.Printf("Starting web server on %s\n", s.listenAddr)
-	return http.ListenAndServe(s.listenAddr, nil)
+
+	// Graceful shutdown goroutine
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Printf("HTTP server shutdown error: %v", err)
+		}
+	}()
+
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }
 
 func (s *Server) Stop() error {
@@ -110,7 +131,7 @@ func (s *Server) handleProcesses(w http.ResponseWriter, r *http.Request) {
 	s.handleRecentProcesses(w, r)
 }
 
-func (s *Server) handleNetworkConnections(w http.ResponseWriter, r *http.Request, db *DB) {
+func (s *Server) handleNetworkConnections(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.Query(`
         SELECT 
             id, timestamp, pid, process_name, 

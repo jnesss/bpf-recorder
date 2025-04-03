@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bradleyjkemp/sigma-go"
@@ -506,94 +507,137 @@ func (sd *Detector) StoreMatch(match MatchResult, event map[string]interface{}, 
 }
 
 // StartPolling starts polling for all event types
-func (sd *Detector) StartPolling(interval time.Duration) error {
-	if sd.running {
-		return fmt.Errorf("detector is already running")
-	}
+func (sd *Detector) StartPolling(ctx context.Context, interval time.Duration) error {
+    if sd.running {
+        return fmt.Errorf("detector is already running")
+    }
 
-	sd.running = true
-	ctx := context.Background()
+    sd.running = true
 
-	// Start a goroutine to handle rule reloading
-	go func() {
-		for sd.running {
-			select {
-			case <-sd.reloadChan:
-				// Reload rules when signaled
-				fmt.Println("Reloading Sigma rules...")
-				if err := sd.LoadRules(); err != nil {
-					fmt.Printf("Error reloading rules: %v\n", err)
-				}
-			case <-time.After(1 * time.Second):
-				// Check periodically
-			}
-		}
-	}()
+    // Create WaitGroup to track goroutines
+    var wg sync.WaitGroup
 
-	// Start a goroutine for each event type
-	for _, eventType := range sd.eventTypes {
-		eventType := eventType // Create a new variable for the goroutine closure
+    // Start rule reloader goroutine
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        ticker := time.NewTicker(1 * time.Second)
+        defer ticker.Stop()
 
-		go func() {
-			for sd.running {
-				// Sleep to prevent tight loops
-				time.Sleep(interval)
+        for {
+            select {
+            case <-ctx.Done():
+                return
+            case <-sd.reloadChan:
+                fmt.Println("Reloading Sigma rules...")
+                if err := sd.LoadRules(); err != nil {
+                    fmt.Printf("Error reloading rules: %v\n", err)
+                }
+            case <-ticker.C:
+                // Check periodically
+            }
+        }
+    }()
 
-				// Get the last processed ID for this event type
-				lastID, err := sd.GetLastProcessedID(eventType)
-				if err != nil {
-					log.Printf("Error retrieving last processed ID for %s: %v", eventType, err)
-					continue
-				}
+    // Start event type pollers
+    for _, eventType := range sd.eventTypes {
+        eventType := eventType // Create new variable for goroutine closure
+        wg.Add(1)
 
-				// Fetch new events
-				events, err := sd.FetchNewEvents(eventType, lastID)
-				if err != nil {
-					log.Printf("Error fetching %s events: %v", eventType, err)
-					continue
-				}
+        go func() {
+            defer wg.Done()
+            ticker := time.NewTicker(interval)
+            defer ticker.Stop()
 
-				// Process events
-				if len(events) > 0 {
-					log.Printf("Processing %d new %s events", len(events), eventType)
+            for {
+                select {
+                case <-ctx.Done():
+                    log.Printf("Stopping %s event polling...", eventType)
+                    return
+                case <-ticker.C:
+                    // Get the last processed ID for this event type
+                    lastID, err := sd.GetLastProcessedID(eventType)
+                    if err != nil {
+                        log.Printf("Error retrieving last processed ID for %s: %v", eventType, err)
+                        continue
+                    }
 
-					var newLastID int64
-					var matchCount int
+                    // Fetch new events
+                    events, err := sd.FetchNewEvents(eventType, lastID)
+                    if err != nil {
+                        log.Printf("Error fetching %s events: %v", eventType, err)
+                        continue
+                    }
 
-					// Check events against rules
-					for _, event := range events {
-						id := event["id"].(int64)
-						if id > newLastID {
-							newLastID = id
-						}
+                    // Process events if we have any and context isn't cancelled
+                    if len(events) > 0 {
+                        log.Printf("Processing %d new %s events", len(events), eventType)
 
-						// Check against all rules with detailed results
-						matches := sd.CheckEvent(ctx, event, eventType)
+                        var newLastID int64
+                        var matchCount int
 
-						// Store matches
-						for _, match := range matches {
-							if err := sd.StoreMatch(match, event, eventType); err != nil {
-								log.Printf("Error storing match: %v", err)
-							}
-							matchCount++
-						}
-					}
+                        // Check events against rules
+                        for _, event := range events {
+                            // Check context before processing each event
+                            if ctx.Err() != nil {
+                                return
+                            }
 
-					// Update state
-					if newLastID > lastID {
-						if err := sd.UpdateDetectorState(eventType, newLastID, matchCount); err != nil {
-							log.Printf("Error updating state for %s: %v", eventType, err)
-						}
-					}
-				}
-			}
-		}()
+                            id := event["id"].(int64)
+                            if id > newLastID {
+                                newLastID = id
+                            }
 
-		log.Printf("Started polling for %s events", eventType)
-	}
+                            // Check against all rules with detailed results
+                            matches := sd.CheckEvent(ctx, event, eventType)
 
-	log.Println("Sigma detection polling started")
-	return nil
+                            // Store matches
+                            for _, match := range matches {
+                                if err := sd.StoreMatch(match, event, eventType); err != nil {
+                                    log.Printf("Error storing match: %v", err)
+                                }
+                                matchCount++
+                            }
+                        }
+
+                        // Update state if we haven't been cancelled
+                        if ctx.Err() == nil && newLastID > lastID {
+                            if err := sd.UpdateDetectorState(eventType, newLastID, matchCount); err != nil {
+                                log.Printf("Error updating state for %s: %v", eventType, err)
+                            }
+                        }
+                    }
+                }
+            }
+        }()
+
+        log.Printf("Started polling for %s events", eventType)
+    }
+
+    // Create done channel for cleanup
+    done := make(chan struct{})
+    go func() {
+        wg.Wait()
+        close(done)
+    }()
+
+    // Wait for either context cancellation or completion
+    select {
+    case <-ctx.Done():
+        log.Println("Sigma detection stopping...")
+        // Wait for goroutines with timeout
+        select {
+        case <-done:
+            log.Println("Sigma detection stopped gracefully")
+        case <-time.After(5 * time.Second):
+            log.Println("Warning: Some Sigma detection goroutines didn't stop in time")
+        }
+    case <-done:
+        log.Println("Sigma detection stopped")
+    }
+
+    sd.running = false
+    return nil
 }
 
 // StopPolling stops the polling

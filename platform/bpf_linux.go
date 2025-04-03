@@ -7,6 +7,7 @@ package platform
 
 import (
 	"bytes"
+	"context"
 	binenc "encoding/binary"
 	"fmt"
 	"log"
@@ -48,33 +49,21 @@ func NewBPFMonitor(db *database.DB, binaryCache *binary.Cache, cgroupPath string
 	}, nil
 }
 
-func (m *LinuxBPFMonitor) Start() error {
+func (m *LinuxBPFMonitor) Start(ctx context.Context) error {
 	// Remove resource limits
 	if err := rlimit.RemoveMemlock(); err != nil {
 		return fmt.Errorf("failed to remove memlock: %v", err)
 	}
 
+	// Load network and process monitoring
 	if err := loadNetmonBPFObjects(&m.netmonObjs, nil); err != nil {
 		return fmt.Errorf("failed to load network eBPF objects: %v", err)
 	}
-	defer m.netmonObjs.Close()
 
 	if err := loadExecveBPFObjects(&m.execveObjs, nil); err != nil {
+		m.netmonObjs.Close()
 		return fmt.Errorf("failed to load process eBPF objects: %v", err)
 	}
-	defer m.execveObjs.Close()
-
-	// Load network monitoring
-	if err := loadNetmonBPFObjects(&m.netmonObjs, nil); err != nil {
-		return fmt.Errorf("failed to load network eBPF objects: %v", err)
-	}
-	defer m.netmonObjs.Close()
-
-	// Load process monitoring
-	if err := loadExecveBPFObjects(&m.execveObjs, nil); err != nil {
-		return fmt.Errorf("failed to load process eBPF objects: %v", err)
-	}
-	defer m.execveObjs.Close()
 
 	// Attach to cgroup hooks for network monitoring
 	cg1, err := link.AttachCgroup(link.CgroupOptions{
@@ -84,8 +73,6 @@ func (m *LinuxBPFMonitor) Start() error {
 	})
 	if err != nil {
 		log.Printf("Warning: Failed to attach cgroup sock_create: %v", err)
-	} else {
-		defer cg1.Close()
 	}
 
 	cg2, err := link.AttachCgroup(link.CgroupOptions{
@@ -95,8 +82,6 @@ func (m *LinuxBPFMonitor) Start() error {
 	})
 	if err != nil {
 		log.Printf("Warning: Failed to attach cgroup ingress: %v", err)
-	} else {
-		defer cg2.Close()
 	}
 
 	cg3, err := link.AttachCgroup(link.CgroupOptions{
@@ -106,30 +91,22 @@ func (m *LinuxBPFMonitor) Start() error {
 	})
 	if err != nil {
 		log.Printf("Warning: Failed to attach cgroup egress: %v", err)
-	} else {
-		defer cg3.Close()
 	}
 
 	// Attach to syscalls and process events
 	tpBind, err := link.Tracepoint("syscalls", "sys_enter_bind", m.netmonObjs.TraceBind, nil)
 	if err != nil {
 		log.Printf("Warning: Failed to attach bind tracepoint: %v", err)
-	} else {
-		defer tpBind.Close()
 	}
 
 	tpExec, err := link.Tracepoint("syscalls", "sys_enter_execve", m.execveObjs.TraceEnterExecve, nil)
 	if err != nil {
 		log.Printf("Warning: Failed to attach execve tracepoint: %v", err)
-	} else {
-		defer tpExec.Close()
 	}
 
 	tpExit, err := link.Tracepoint("sched", "sched_process_exit", m.execveObjs.TraceSchedProcessExit, nil)
 	if err != nil {
 		log.Printf("Warning: Failed to attach exit tracepoint: %v", err)
-	} else {
-		defer tpExit.Close()
 	}
 
 	// Create readers for each ringbuffer
@@ -137,13 +114,43 @@ func (m *LinuxBPFMonitor) Start() error {
 	if err != nil {
 		return fmt.Errorf("failed to create network ringbuf reader: %v", err)
 	}
-	defer netReader.Close()
 
 	procReader, err := ringbuf.NewReader(m.execveObjs.Events)
 	if err != nil {
+		netReader.Close()
 		return fmt.Errorf("failed to create process ringbuf reader: %v", err)
 	}
-	defer procReader.Close()
+
+	// Create cleanup function
+	cleanup := func() {
+		if netReader != nil {
+			netReader.Close()
+		}
+		if procReader != nil {
+			procReader.Close()
+		}
+		if cg1 != nil {
+			cg1.Close()
+		}
+		if cg2 != nil {
+			cg2.Close()
+		}
+		if cg3 != nil {
+			cg3.Close()
+		}
+		if tpBind != nil {
+			tpBind.Close()
+		}
+		if tpExec != nil {
+			tpExec.Close()
+		}
+		if tpExit != nil {
+			tpExit.Close()
+		}
+		m.netmonObjs.Close()
+		m.execveObjs.Close()
+	}
+	defer cleanup()
 
 	// Use WaitGroups to ensure clean shutdown
 	var wg sync.WaitGroup
@@ -160,14 +167,38 @@ func (m *LinuxBPFMonitor) Start() error {
 	// Start process event reader goroutine
 	go m.handleProcessEvents(&wg, procReader, stop)
 
-	// Wait for stop signal
-	<-m.stopChan
+	// Wait for context cancellation or stop signal
+	select {
+	case <-ctx.Done():
+		log.Println("Context cancelled, stopping BPF monitoring...")
+	case <-m.stopChan:
+		log.Println("Stop signal received, stopping BPF monitoring...")
+	}
 
-	// Cleanup
+	// Signal readers to stop and wait for them to finish
 	close(stop)
-	wg.Wait()
+
+	// Wait for goroutines with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		log.Println("BPF monitoring stopped gracefully")
+	case <-time.After(5 * time.Second):
+		log.Println("Warning: BPF monitoring shutdown timed out")
+	}
 
 	return nil
+}
+
+func (m *LinuxBPFMonitor) cleanup() {
+	// Close BPF objects
+	m.netmonObjs.Close()
+	m.execveObjs.Close()
 }
 
 func (m *LinuxBPFMonitor) Stop() error {
