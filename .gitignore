@@ -3,3 +3,10 @@ bpf-recorder
 .DS_Store
 data/
 rules/
+bins/
+
+# Generated eBPF files
+*_bpfeb.go
+*_bpfel.go
+platform/*_bpfeb.go
+platform/*_bpfel.go
