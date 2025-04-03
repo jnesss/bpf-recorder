@@ -12,6 +12,7 @@ import (
 	binenc "encoding/binary"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"strings"
 	"sync"
