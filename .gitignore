@@ -1,3 +1,5 @@
 bpf-recorder
 *.o
 .DS_Store
+data/
+rules/
