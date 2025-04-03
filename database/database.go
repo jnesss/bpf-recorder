@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,21 +22,29 @@ type DB struct {
 
 // ProcessRecord represents a process event in the database
 type ProcessRecord struct {
-	Timestamp   time.Time
-	PID         uint32
-	PPID        uint32
-	Comm        string
-	CmdLine     string
-	ExePath     string
-	WorkingDir  string
-	Username    string
-	ParentComm  string
-	ContainerID string
-	UID         uint32
-	GID         uint32
-	ExitCode    uint32
-	ExitTime    time.Time
-	BinaryMD5   string
+	Timestamp     time.Time
+	PID           uint32
+	PPID          uint32
+	Comm          string
+	CmdLine       string
+	ExePath       string
+	WorkingDir    string
+	Username      string
+	ParentComm    string
+	ContainerID   string
+	UID           uint32
+	GID           uint32
+	ExitCode      uint32
+	ExitTime      time.Time
+	BinaryMD5     string
+	Environment   []string
+	FileDescCount int
+	CPUUsage      float64
+	MemoryUsage   uint64
+	MemoryPercent float64
+	ThreadCount   int
+	OpenFiles     []string
+	DirHistory    []string
 }
 
 // NetworkRecord represents a network connection in the database
@@ -104,7 +113,15 @@ func initProcessSchema(db *sql.DB) error {
 		gid          INTEGER,
 		exit_code    INTEGER,
 		exit_time    DATETIME,
-		binary_md5   TEXT
+		binary_md5   TEXT,
+        environment     TEXT,           -- JSON array of environment variables
+        file_desc_count INTEGER,        -- Number of open file descriptors
+        cpu_usage       REAL,           -- CPU usage percentage
+        memory_usage    INTEGER,        -- Memory usage in bytes
+        memory_percent  REAL,           -- Memory usage percentage
+        thread_count    INTEGER,        -- Number of threads
+        open_files      TEXT,           -- JSON array of open files
+        dir_history     TEXT            -- JSON array of working directory history
 	);`
 
 	if _, err := db.Exec(schema); err != nil {
@@ -115,6 +132,8 @@ func initProcessSchema(db *sql.DB) error {
 		"CREATE INDEX IF NOT EXISTS idx_pid ON processes(pid);",
 		"CREATE INDEX IF NOT EXISTS idx_ppid ON processes(ppid);",
 		"CREATE INDEX IF NOT EXISTS idx_timestamp ON processes(timestamp);",
+		"CREATE INDEX IF NOT EXISTS idx_cpu_usage ON processes(cpu_usage);",
+		"CREATE INDEX IF NOT EXISTS idx_memory_usage ON processes(memory_usage);",
 	}
 
 	for _, idx := range indexes {
@@ -209,27 +228,165 @@ func initSigmaSchema(db *sql.DB) error {
 
 // InsertProcess adds a process event record to the database
 func (db *DB) InsertProcess(record *process.ProcessInfo) error {
+	// Gather all data under lock
+	record.Mu.RLock()
+	insertData := struct {
+		startTime      time.Time
+		pid            uint32
+		ppid           uint32
+		comm           string
+		cmdLine        string
+		exePath        string
+		workingDir     string
+		username       string
+		parentComm     string
+		containerID    string
+		uid            uint32
+		gid            uint32
+		binaryMD5      string
+		environment    []string
+		workingDirHist []string
+		stats          *process.ProcessStats
+	}{
+		startTime:      record.StartTime,
+		pid:            record.PID,
+		ppid:           record.PPID,
+		comm:           record.Comm,
+		cmdLine:        record.CmdLine,
+		exePath:        record.ExePath,
+		workingDir:     record.WorkingDir,
+		username:       record.Username,
+		parentComm:     record.ParentComm,
+		containerID:    record.ContainerID,
+		uid:            record.UID,
+		gid:            record.GID,
+		binaryMD5:      record.BinaryMD5,
+		environment:    append([]string{}, record.Environment...),
+		workingDirHist: append([]string{}, record.WorkingDirHistory...),
+		stats:          record.Stats,
+	}
+	record.Mu.RUnlock()
+
+	// Now do all JSON marshaling and database operations without holding the lock
+	envJSON, err := json.Marshal(insertData.environment)
+	if err != nil {
+		return fmt.Errorf("failed to marshal environment: %v", err)
+	}
+
+	dirHistoryJSON, err := json.Marshal(insertData.workingDirHist)
+	if err != nil {
+		return fmt.Errorf("failed to marshal directory history: %v", err)
+	}
+
+	// Get stats values if available
+	var (
+		fileDescCount int
+		cpuUsage      float64
+		memoryUsage   uint64
+		memoryPercent float64
+		threadCount   int
+		openFiles     []string
+	)
+
+	if insertData.stats != nil {
+		insertData.stats.Mu.RLock()
+		fileDescCount = insertData.stats.FileDescCount
+		cpuUsage = insertData.stats.CPUUsage
+		memoryUsage = insertData.stats.MemoryUsage
+		memoryPercent = insertData.stats.MemoryPercent
+		threadCount = insertData.stats.ThreadCount
+		openFiles = append([]string{}, insertData.stats.OpenFiles...)
+		insertData.stats.Mu.RUnlock()
+	}
+
+	openFilesJSON, err := json.Marshal(openFiles)
+	if err != nil {
+		return fmt.Errorf("failed to marshal open files: %v", err)
+	}
+
 	query := `
         INSERT INTO processes (
             timestamp, pid, ppid, comm, cmdline, exe_path,
             working_dir, username, parent_comm, container_id,
-            uid, gid, binary_md5
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            uid, gid, binary_md5,
+            environment, file_desc_count, cpu_usage,
+            memory_usage, memory_percent, thread_count,
+            open_files, dir_history
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := db.Db.Exec(query,
-		record.StartTime,
-		record.PID,
-		record.PPID,
-		record.Comm,
-		record.CmdLine,
-		record.ExePath,
-		record.WorkingDir,
-		record.Username,
-		record.ParentComm,
-		record.ContainerID,
-		record.UID,
-		record.GID,
-		record.BinaryMD5)
+	_, err = db.Db.Exec(query,
+		insertData.startTime,
+		insertData.pid,
+		insertData.ppid,
+		insertData.comm,
+		insertData.cmdLine,
+		insertData.exePath,
+		insertData.workingDir,
+		insertData.username,
+		insertData.parentComm,
+		insertData.containerID,
+		insertData.uid,
+		insertData.gid,
+		insertData.binaryMD5,
+		string(envJSON),
+		fileDescCount,
+		cpuUsage,
+		memoryUsage,
+		memoryPercent,
+		threadCount,
+		string(openFilesJSON),
+		string(dirHistoryJSON))
+
+	return err
+}
+
+// UpdateProcessStats updates the stats for a running process
+func (db *DB) UpdateProcessStats(pid uint32, stats *process.ProcessStats) error {
+	// Gather all data under lock
+	stats.Mu.RLock()
+	updateData := struct {
+		cpuUsage      float64
+		memoryUsage   uint64
+		memoryPercent float64
+		threadCount   int
+		fileDescCount int
+		openFiles     []string
+	}{
+		cpuUsage:      stats.CPUUsage,
+		memoryUsage:   stats.MemoryUsage,
+		memoryPercent: stats.MemoryPercent,
+		threadCount:   stats.ThreadCount,
+		fileDescCount: stats.FileDescCount,
+		openFiles:     append([]string{}, stats.OpenFiles...),
+	}
+	stats.Mu.RUnlock()
+
+	// Do JSON marshaling and database operations without holding the lock
+	openFilesJSON, err := json.Marshal(updateData.openFiles)
+	if err != nil {
+		return fmt.Errorf("failed to marshal open files: %v", err)
+	}
+
+	query := `
+        UPDATE processes 
+        SET cpu_usage = ?,
+            memory_usage = ?,
+            memory_percent = ?,
+            thread_count = ?,
+            file_desc_count = ?,
+            open_files = ?
+        WHERE pid = ? 
+        AND exit_time IS NULL`
+
+	_, err = db.Db.Exec(query,
+		updateData.cpuUsage,
+		updateData.memoryUsage,
+		updateData.memoryPercent,
+		updateData.threadCount,
+		updateData.fileDescCount,
+		string(openFilesJSON),
+		pid)
+
 	return err
 }
 

@@ -39,14 +39,19 @@ type LinuxBPFMonitor struct {
 	execveObjs execveBPFObjects
 }
 
-func NewBPFMonitor(db *database.DB, binaryCache *binary.Cache, cgroupPath string) (BPFMonitor, error) {
+func NewBPFMonitor(config *MonitorConfig) (BPFMonitor, error) {
 	return &LinuxBPFMonitor{
-		db:          db,
-		binaryCache: binaryCache,
-		processMap:  process.NewProcessMap(),
-		cgroupPath:  cgroupPath,
+		db:          config.DB.(*database.DB),
+		binaryCache: config.BinaryCache.(*binary.Cache),
+		processMap:  config.ProcessMap,
+		cgroupPath:  config.CgroupPath,
 		stopChan:    make(chan struct{}),
 	}, nil
+}
+
+// Add the new interface method
+func (m *LinuxBPFMonitor) GetProcessMap() *process.ProcessMap {
+	return m.processMap
 }
 
 func (m *LinuxBPFMonitor) Start(ctx context.Context) error {

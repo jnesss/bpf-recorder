@@ -1,6 +1,10 @@
 package platform
 
-import "context"
+import (
+	"context"
+
+	"github.com/jnesss/bpf-recorder/process"
+)
 
 // Event type constants
 const (
@@ -57,4 +61,13 @@ type NetworkEvent struct {
 type BPFMonitor interface {
 	Start(context.Context) error
 	Stop() error
+	GetProcessMap() *process.ProcessMap
+}
+
+// MonitorConfig holds configuration for creating a new monitor
+type MonitorConfig struct {
+	DB          interface{} // Using interface{} since we don't want to import database package here
+	BinaryCache interface{} // Same for binary cache
+	ProcessMap  *process.ProcessMap
+	CgroupPath  string
 }

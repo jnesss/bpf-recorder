@@ -18,6 +18,7 @@ import (
 	"github.com/jnesss/bpf-recorder/binary"
 	"github.com/jnesss/bpf-recorder/database"
 	"github.com/jnesss/bpf-recorder/platform"
+	"github.com/jnesss/bpf-recorder/process"
 	"github.com/jnesss/bpf-recorder/sigma"
 	"github.com/jnesss/bpf-recorder/web"
 )
@@ -35,6 +36,8 @@ func main() {
 	binsDir := flag.String("bins", DefaultBinsDir, "Directory for binary storage")
 	rulesDir := flag.String("rules", DefaultRulesDir, "Directory for Sigma rules")
 	binCacheSize := flag.Int("bin-cache-size", 128, "Size of binary cache")
+	collectStats := flag.Bool("collect-stats", true, "Enable collection of process statistics")
+
 	flag.Parse()
 
 	// Get non-root user for ownership
@@ -47,6 +50,9 @@ func main() {
 	if err := setupDirectories(*dataDir, *binsDir, *rulesDir, runningUser); err != nil {
 		log.Fatalf("Failed to setup directories: %v", err)
 	}
+
+	// Create process map
+	processMap := process.NewProcessMap()
 
 	// Initialize binary cache
 	binaryCache, err := binary.NewCache(*binCacheSize, *binsDir)
@@ -93,9 +99,28 @@ func main() {
 	fmt.Println("Web interface available at http://localhost:8080")
 
 	// Initialize and start BPF monitoring
-	monitor, err := platform.NewBPFMonitor(db, binaryCache, *cgroupPath)
+	monitorConfig := &platform.MonitorConfig{
+		DB:          db,
+		BinaryCache: binaryCache,
+		ProcessMap:  processMap,
+		CgroupPath:  *cgroupPath,
+	}
+	monitor, err := platform.NewBPFMonitor(monitorConfig)
 	if err != nil {
 		log.Fatalf("Failed to initialize BPF monitor: %v", err)
+	}
+
+	// Initialize and start stats collector if enabled
+	if *collectStats {
+		statsCollector := process.NewStatsCollector(db, processMap, 15*time.Second)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := statsCollector.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("Stats collector error: %v\n", err)
+			}
+		}()
+		fmt.Println("Process stats collection started")
 	}
 
 	// Start BPF monitor with context
@@ -106,6 +131,19 @@ func main() {
 			log.Printf("BPF monitor error: %v\n", err)
 		}
 	}()
+
+	// Initialize and start stats collector if enabled
+	if *collectStats {
+		statsCollector := process.NewStatsCollector(db, processMap, 15*time.Second)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := statsCollector.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("Stats collector error: %v\n", err)
+			}
+		}()
+		fmt.Println("Process stats collection started")
+	}
 
 	// Wait for signal
 	sig := make(chan os.Signal, 1)
